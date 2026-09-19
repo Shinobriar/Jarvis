@@ -150,7 +150,7 @@ final class XUi {
                 PHOTO=13, CLOSE=14, CHECK=15, PLUS=16, XLOGO=17, COMPOSE=18,
                 VERIFIED=19, PROFILE=20, GLOBE=21, CAMERA=22, GIF=23, POLL=24,
                 LOCATION=25, SCHEDULE=26, PLUS_CIRCLE=27, CALENDAR=28, LINK=29,
-                DRAFTS=30, SETTINGS=31;
+                DRAFTS=30, SETTINGS=31, BALLOON=32;
 
         private final int type;
         private int color;
@@ -201,6 +201,7 @@ final class XUi {
                 case LINK: return R.drawable.ic_vector_link;
                 case DRAFTS: return R.drawable.ic_vector_drafts;
                 case SETTINGS: return R.drawable.ic_vector_settings_stroke;
+                case BALLOON: return R.drawable.ic_vector_balloon_stroke;
                 default: return R.drawable.ic_vector_x;
             }
         }
