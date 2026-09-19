@@ -1119,6 +1119,8 @@ public class MainActivity extends Activity {
             renderHome();
             return;
         }
+        boolean openingDifferentThread = currentScreen != SCREEN_POST || currentPostId != postId;
+        if (openingDifferentThread && !restoringNavigation) currentThreadReplyLimit = 10;
         rememberBeforeNavigation(SCREEN_POST, postId);
         currentScreen = SCREEN_POST;
         currentPostId = postId;
@@ -1136,10 +1138,32 @@ public class MainActivity extends Activity {
         body.addView(detailPostView(p));
         body.addView(XUi.divider(this, pal.border));
 
-        List<Post> replies = db.repliesTo(p.id, currentAccountId);
+        int totalReplies = db.threadReplyCount(p.id, currentAccountId);
+        List<Post> replies = db.threadReplies(p.id, currentAccountId, currentThreadReplyLimit);
         for (Post r : replies) {
             db.addView(currentAccountId, r.id);
-            body.addView(postView(r, false));
+
+            LinearLayout nested = vbox();
+            int indent = Math.min(3, Math.max(0, r.threadDepth - 1)) * 16;
+            LinearLayout.LayoutParams nestedParams = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            nestedParams.setMargins(dp(indent), 0, 0, 0);
+            nested.setLayoutParams(nestedParams);
+            nested.addView(postView(r, false));
+            body.addView(nested);
+            body.addView(XUi.divider(this, pal.border));
+        }
+
+        if (totalReplies > replies.size()) {
+            int remaining = totalReplies - replies.size();
+            TextView moreReplies = tv("Show more replies" + (remaining > 0 ? " (" + remaining + ")" : ""), 15, XUi.BLUE, true);
+            moreReplies.setGravity(Gravity.CENTER);
+            moreReplies.setPadding(dp(12), dp(15), dp(12), dp(15));
+            moreReplies.setOnClickListener(v -> {
+                currentThreadReplyLimit += 10;
+                renderPost(postId);
+            });
+            body.addView(moreReplies);
             body.addView(XUi.divider(this, pal.border));
         }
 
