@@ -1701,36 +1701,58 @@ public class MainActivity extends Activity {
         EditText name = field("Name", false); name.setText(a.name);
         EditText handle = field("Handle", false); handle.setText(a.handle);
         EditText bio = field("Bio", true); bio.setText(a.bio);
+        EditText location = field("Location", false); location.setText(a.location == null ? "" : a.location);
+        EditText website = field("Website", false); website.setText(a.website == null ? "" : a.website);
+        EditText birth = field("Birthday / birth date", false); birth.setText(a.birthDate == null ? "" : a.birthDate);
+        EditText joined = field("Joined date (YYYY-MM-DD)", false);
+        joined.setText(new SimpleDateFormat("yyyy-MM-dd", Locale.US).format(new Date(a.createdAt > 0 ? a.createdAt : System.currentTimeMillis())));
+
         EditText followers = field("Displayed followers (-1 = real)", false);
         followers.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_SIGNED);
         followers.setText(String.valueOf(a.displayFollowers));
         EditText following = field("Displayed following (-1 = real)", false);
         following.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_SIGNED);
         following.setText(String.valueOf(a.displayFollowing));
+
         CheckBox verified = checkbox("Verified badge"); verified.setChecked(a.verified);
         CheckBox priv = checkbox("Private account"); priv.setChecked(a.isPrivate);
-        TextView avatar = pill("Choose avatar", false);
-        TextView banner = pill("Choose header", false);
+        CheckBox bot = checkbox("Ollama AI bot account"); bot.setChecked(a.isBot);
+        EditText persona = field("Bot persona / posting style", true);
+        persona.setText(a.botPersona == null ? "" : a.botPersona);
+
+        TextView avatar = pill("Avatar · choose / adjust", false);
+        TextView banner = pill("Header · choose / adjust", false);
         LinearLayout images = hbox();
         LinearLayout.LayoutParams imp = new LinearLayout.LayoutParams(0, dp(40), 1f);
         imp.setMargins(dp(3), dp(8), dp(3), dp(8));
         avatar.setLayoutParams(imp);
-        banner.setLayoutParams(new LinearLayout.LayoutParams(0, dp(40), 1f));
+        LinearLayout.LayoutParams bmp = new LinearLayout.LayoutParams(0, dp(40), 1f);
+        bmp.setMargins(dp(3), dp(8), dp(3), dp(8));
+        banner.setLayoutParams(bmp);
         images.addView(avatar);
         images.addView(banner);
 
         form.addView(name);
         form.addView(handle);
         form.addView(bio);
+        form.addView(location);
+        form.addView(website);
+        form.addView(birth);
+        form.addView(joined);
         form.addView(followers);
         form.addView(following);
         form.addView(verified);
         form.addView(priv);
+        form.addView(bot);
+        form.addView(persona);
         form.addView(images);
+
+        ScrollView formScroll = scrollOf(form);
+        formScroll.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(560)));
 
         AlertDialog dialog = new AlertDialog.Builder(this)
                 .setTitle("Director · account")
-                .setView(form)
+                .setView(formScroll)
                 .setNegativeButton("Cancel", null)
                 .setPositiveButton("Save", null)
                 .create();
@@ -1739,14 +1761,24 @@ public class MainActivity extends Activity {
             a.name = name.getText().toString().trim();
             a.handle = handle.getText().toString().trim();
             a.bio = bio.getText().toString();
+            a.location = location.getText().toString().trim();
+            a.website = website.getText().toString().trim();
+            a.birthDate = birth.getText().toString().trim();
             a.verified = verified.isChecked();
             a.isPrivate = priv.isChecked();
-            try { a.displayFollowers = Long.parseLong(followers.getText().toString().trim()); } catch (Exception e) { a.displayFollowers = -1; }
-            try { a.displayFollowing = Long.parseLong(following.getText().toString().trim()); } catch (Exception e) { a.displayFollowing = -1; }
+            a.isBot = bot.isChecked();
+            a.botPersona = persona.getText().toString();
+            try { a.displayFollowers = Long.parseLong(followers.getText().toString().trim()); } catch (Exception ex) { a.displayFollowers = -1; }
+            try { a.displayFollowing = Long.parseLong(following.getText().toString().trim()); } catch (Exception ex) { a.displayFollowing = -1; }
+            try {
+                Date parsed = new SimpleDateFormat("yyyy-MM-dd", Locale.US).parse(joined.getText().toString().trim());
+                if (parsed != null) a.createdAt = parsed.getTime();
+            } catch (Exception ignored) {}
+            if (a.isBot && a.botNextAt <= 0) a.botNextAt = System.currentTimeMillis();
             try {
                 db.updateAccount(a);
                 clearAccountCache();
-            } catch (SQLiteConstraintException e) {
+            } catch (SQLiteConstraintException ex) {
                 Toast.makeText(this, "That handle already exists", Toast.LENGTH_SHORT).show();
             }
         };
@@ -1759,15 +1791,13 @@ public class MainActivity extends Activity {
             });
             avatar.setOnClickListener(x -> {
                 save.run();
-                pendingImageAccountId = id;
                 dialog.dismiss();
-                pickImage(PICK_AVATAR);
+                chooseAccountImage(id, true, a.avatarPath);
             });
             banner.setOnClickListener(x -> {
                 save.run();
-                pendingImageAccountId = id;
                 dialog.dismiss();
-                pickImage(PICK_BANNER);
+                chooseAccountImage(id, false, a.bannerPath);
             });
         });
         dialog.show();
