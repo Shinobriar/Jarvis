@@ -3,6 +3,8 @@ package com.shinobriar.xlocal;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.Dialog;
+import android.app.DatePickerDialog;
+import android.app.TimePickerDialog;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.ContentResolver;
@@ -15,11 +17,16 @@ import android.database.sqlite.SQLiteConstraintException;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
+import android.graphics.ImageDecoder;
 import android.graphics.Typeface;
+import android.graphics.drawable.AnimatedImageDrawable;
 import android.graphics.drawable.ColorDrawable;
+import android.graphics.drawable.Drawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.text.Editable;
 import android.text.InputType;
 import android.text.Spannable;
@@ -30,6 +37,7 @@ import android.text.TextWatcher;
 import android.text.method.LinkMovementMethod;
 import android.text.style.ClickableSpan;
 import android.text.style.ForegroundColorSpan;
+import android.provider.MediaStore;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -58,6 +66,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.Date;
@@ -80,6 +89,8 @@ public class MainActivity extends Activity {
     private static final int EXPORT_UNIVERSE = 504;
     private static final int IMPORT_UNIVERSE = 505;
     private static final int SAVE_POST_MEDIA = 506;
+    private static final int CAPTURE_POST_MEDIA = 507;
+    private static final int PICK_GIF_MEDIA = 508;
 
     private static final int SCREEN_HOME = 1;
     private static final int SCREEN_SEARCH = 2;
@@ -96,6 +107,7 @@ public class MainActivity extends Activity {
     private SharedPreferences prefs;
     private BotEngine botEngine;
     private final Random random = new Random();
+    private final Handler uiHandler = new Handler(Looper.getMainLooper());
     private XUi.Palette pal;
     private int themeMode;
     private long currentAccountId;
@@ -115,6 +127,9 @@ public class MainActivity extends Activity {
     private long composeAuthorId = -1;
     private Long composeReplyTo;
     private Long composeQuoteOf;
+    private String composeLocation = "";
+    private final ArrayList<String> composePollOptions = new ArrayList<>();
+    private long composeScheduledAt = 0L;
     private long activeDraftId = -1;
 
     private final Map<Long, Account> accountCache = new HashMap<>();
@@ -133,6 +148,7 @@ public class MainActivity extends Activity {
             if (!isFinishing() && currentScreen == SCREEN_HOME) renderHome();
         });
         botEngine.start();
+        db.publishDueScheduled();
         renderHome();
     }
 
