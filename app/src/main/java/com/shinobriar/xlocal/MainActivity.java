@@ -394,7 +394,7 @@ public class MainActivity extends Activity {
     }
 
     private List<Post> forYouPosts() {
-        List<Post> all = db.recentPosts(300);
+        List<Post> all = db.recentVisiblePosts(currentAccountId, 300);
         ArrayList<Post> top = new ArrayList<>();
         for (Post p : all) if (p.replyTo == null) top.add(p);
         final long now = System.currentTimeMillis();
@@ -427,7 +427,7 @@ public class MainActivity extends Activity {
 
     private View postView(Post p, boolean detail) {
         Account a = account(p.authorId);
-        if (a == null) return new View(this);
+        if (a == null || !db.canSeeAccount(currentAccountId, a.id)) return new View(this);
 
         LinearLayout row = hbox();
         row.setGravity(Gravity.TOP);
@@ -456,7 +456,7 @@ public class MainActivity extends Activity {
             Post parent = db.getPost(p.replyTo);
             if (parent != null) {
                 Account pa = account(parent.authorId);
-                if (pa != null) {
+                if (pa != null && db.canSeeAccount(currentAccountId, pa.id)) {
                     TextView replying = tv("Replying to @" + pa.handle, 14, pal.secondary, false);
                     replying.setPadding(0, 0, 0, dp(3));
                     content.addView(replying);
@@ -513,6 +513,23 @@ public class MainActivity extends Activity {
 
         content.addView(actionRow(p));
         row.addView(content);
+
+        if (p.profileRepost && p.profileActorId > 0) {
+            Account reposter = account(p.profileActorId);
+            LinearLayout outer = vbox();
+            LinearLayout repostHeader = hbox();
+            repostHeader.setPadding(dp(52), dp(7), dp(12), 0);
+            XUi.IconView repostIcon = new XUi.IconView(this, XUi.IconView.REPOST, pal.secondary);
+            repostIcon.setLayoutParams(new LinearLayout.LayoutParams(dp(18), dp(18)));
+            repostIcon.setPadding(dp(2), dp(2), dp(2), dp(2));
+            repostHeader.addView(repostIcon);
+            String who = reposter == null ? "Reposted" : reposter.name + " reposted";
+            TextView label = tv("  " + who, 13, pal.secondary, true);
+            repostHeader.addView(label);
+            outer.addView(repostHeader);
+            outer.addView(row);
+            return outer;
+        }
         return row;
     }
 
@@ -524,6 +541,12 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         cp.setMargins(0, dp(5), dp(4), dp(8));
         card.setLayoutParams(cp);
+        if (qa == null || !db.canSeeAccount(currentAccountId, qa.id)) {
+            TextView unavailable = tv("This post is unavailable", 14, pal.secondary, false);
+            unavailable.setPadding(0, dp(2), 0, dp(2));
+            card.addView(unavailable);
+            return card;
+        }
         if (qa != null) {
             LinearLayout meta = hbox();
             TextView n = tv(qa.name, 14, pal.fg, true);
@@ -589,7 +612,8 @@ public class MainActivity extends Activity {
 
     private void renderPost(long postId) {
         Post p = db.getPost(postId);
-        if (p == null) {
+        if (p == null || !db.canSeeAccount(currentAccountId, p.authorId)) {
+            Toast.makeText(this, "This post isn't available from this account", Toast.LENGTH_SHORT).show();
             renderHome();
             return;
         }
@@ -609,7 +633,7 @@ public class MainActivity extends Activity {
         body.addView(postView(p, true));
         body.addView(XUi.divider(this, pal.border));
 
-        List<Post> replies = db.repliesTo(p.id);
+        List<Post> replies = db.repliesTo(p.id, currentAccountId);
         for (Post r : replies) {
             db.addView(currentAccountId, r.id);
             body.addView(postView(r, false));
@@ -645,6 +669,11 @@ public class MainActivity extends Activity {
     private void renderProfile(long accountId) {
         Account a = db.getAccount(accountId);
         if (a == null) return;
+        if (!db.canSeeAccount(currentAccountId, accountId)) {
+            Toast.makeText(this, "This account isn't available from the current account", Toast.LENGTH_SHORT).show();
+            renderHome();
+            return;
+        }
         currentScreen = SCREEN_PROFILE;
         currentProfileId = accountId;
         clearAccountCache();
@@ -753,9 +782,9 @@ public class MainActivity extends Activity {
         body.addView(XUi.divider(this, pal.border));
 
         List<Post> posts;
-        if (profileTab == 0) posts = db.postsByAccount(accountId, false);
+        if (profileTab == 0) posts = db.profileTimeline(accountId, currentAccountId);
         else if (profileTab == 1) posts = db.postsByAccount(accountId, true);
-        else if (profileTab == 3) posts = db.likedPosts(accountId);
+        else if (profileTab == 3) posts = db.likedPosts(accountId, currentAccountId);
         else {
             posts = new ArrayList<>();
             for (Post p : db.postsByAccount(accountId, true)) if (p.mediaPath != null) posts.add(p);
@@ -832,11 +861,11 @@ public class MainActivity extends Activity {
             TextView h = tv("Explore your universe", 22, pal.fg, true);
             h.setPadding(dp(16), dp(22), dp(16), dp(8));
             results.addView(h);
-            for (Account a : db.listAccounts()) results.addView(accountRow(a));
+            for (Account a : db.listVisibleAccounts(currentAccountId)) results.addView(accountRow(a));
             return;
         }
 
-        List<Account> accounts = db.searchAccounts(q);
+        List<Account> accounts = db.searchAccounts(q, currentAccountId);
         if (!accounts.isEmpty()) {
             TextView h = tv("People", 20, pal.fg, true);
             h.setPadding(dp(16), dp(14), dp(16), dp(7));
@@ -845,7 +874,7 @@ public class MainActivity extends Activity {
             results.addView(XUi.divider(this, pal.border));
         }
 
-        List<Post> posts = db.searchPosts(q);
+        List<Post> posts = db.searchPosts(q, currentAccountId);
         if (!posts.isEmpty()) {
             TextView h = tv("Posts", 20, pal.fg, true);
             h.setPadding(dp(16), dp(14), dp(16), dp(7));
@@ -966,7 +995,7 @@ public class MainActivity extends Activity {
         shell.addView(XUi.divider(this, pal.border));
 
         LinearLayout list = vbox();
-        List<Account> accounts = db.listAccounts();
+        List<Account> accounts = db.listVisibleAccounts(currentAccountId);
         Collections.sort(accounts, (a, b) -> Boolean.compare(db.hasMessages(currentAccountId, b.id), db.hasMessages(currentAccountId, a.id)));
         boolean any = false;
         for (Account a : accounts) {
@@ -989,6 +1018,11 @@ public class MainActivity extends Activity {
     private void renderChat(long otherId) {
         Account other = db.getAccount(otherId);
         if (other == null) return;
+        if (!db.canSeeAccount(currentAccountId, otherId)) {
+            Toast.makeText(this, "This account isn't available from the current account", Toast.LENGTH_SHORT).show();
+            renderMessages();
+            return;
+        }
         currentScreen = SCREEN_CHAT;
         currentChatId = otherId;
 
@@ -1066,7 +1100,7 @@ public class MainActivity extends Activity {
         shell.addView(XUi.divider(this, pal.border));
 
         LinearLayout list = vbox();
-        List<Post> all = db.recentPosts(500);
+        List<Post> all = db.recentVisiblePosts(currentAccountId, 500);
         int count = 0;
         for (Post p : all) {
             if (db.hasInteraction(currentAccountId, p.id, "bookmark")) {
