@@ -307,7 +307,7 @@ final class BotEngine {
     private static String clean(String s) {
         if (s == null) return "";
         s = s.trim();
-        if (s.startsWith("\\\"") && s.endsWith("\\\"") && s.length() > 1) s = s.substring(1, s.length()-1).trim();
+        if (s.startsWith("\"") && s.endsWith("\"") && s.length() > 1) s = s.substring(1, s.length()-1).trim();
         s = s.replace("\r", " ").trim();
         if (s.length() > 500) s = s.substring(0, 500).trim();
         return s;
