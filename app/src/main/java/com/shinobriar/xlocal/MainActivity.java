@@ -1,0 +1,1952 @@
+package com.shinobriar.xlocal;
+
+import android.app.Activity;
+import android.app.AlertDialog;
+import android.app.Dialog;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.ContentResolver;
+import android.content.ContentValues;
+import android.content.Context;
+import android.content.DialogInterface;
+import android.content.Intent;
+import android.content.SharedPreferences;
+import android.database.sqlite.SQLiteConstraintException;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.Color;
+import android.graphics.Typeface;
+import android.graphics.drawable.ColorDrawable;
+import android.net.Uri;
+import android.os.Build;
+import android.os.Bundle;
+import android.text.Editable;
+import android.text.InputType;
+import android.text.TextWatcher;
+import android.view.Gravity;
+import android.view.View;
+import android.view.ViewGroup;
+import android.view.ViewOutlineProvider;
+import android.view.Window;
+import android.view.WindowManager;
+import android.view.inputmethod.InputMethodManager;
+import android.widget.Button;
+import android.widget.CheckBox;
+import android.widget.EditText;
+import android.widget.FrameLayout;
+import android.widget.ImageView;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
+import android.widget.Space;
+import android.widget.TextView;
+import android.widget.Toast;
+
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.UUID;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
+import java.util.zip.ZipOutputStream;
+
+public class MainActivity extends Activity {
+    private static final int PICK_AVATAR = 501;
+    private static final int PICK_BANNER = 502;
+    private static final int PICK_POST_MEDIA = 503;
+    private static final int EXPORT_UNIVERSE = 504;
+    private static final int IMPORT_UNIVERSE = 505;
+    private static final int SAVE_POST_MEDIA = 506;
+
+    private static final int SCREEN_HOME = 1;
+    private static final int SCREEN_SEARCH = 2;
+    private static final int SCREEN_NOTIFICATIONS = 3;
+    private static final int SCREEN_MESSAGES = 4;
+    private static final int SCREEN_PROFILE = 5;
+    private static final int SCREEN_POST = 6;
+    private static final int SCREEN_BOOKMARKS = 7;
+    private static final int SCREEN_CHAT = 8;
+
+    private LocalDb db;
+    private SharedPreferences prefs;
+    private XUi.Palette pal;
+    private int themeMode;
+    private long currentAccountId;
+
+    private int currentScreen = SCREEN_HOME;
+    private boolean homeForYou = true;
+    private long currentProfileId = -1;
+    private int profileTab = 0;
+    private long currentPostId = -1;
+    private long currentChatId = -1;
+
+    private long pendingImageAccountId = -1;
+    private String pendingSaveMediaPath;
+    private String composeDraft = "";
+    private String composeMediaPath;
+    private long composeAuthorId = -1;
+    private Long composeReplyTo;
+    private Long composeQuoteOf;
+
+    private final Map<Long, Account> accountCache = new HashMap<>();
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        prefs = getSharedPreferences("xlocal_prefs", MODE_PRIVATE);
+        themeMode = prefs.getInt("theme_mode", 0);
+        pal = new XUi.Palette(themeMode);
+        db = new LocalDb(this);
+        currentAccountId = prefs.getLong("current_account", -1);
+        ensureCurrentAccount();
+        applySystemBars();
+        renderHome();
+    }
+
+    private void ensureCurrentAccount() {
+        if (currentAccountId > 0 && db.getAccount(currentAccountId) != null) return;
+        List<Account> all = db.listAccounts();
+        if (!all.isEmpty()) {
+            currentAccountId = all.get(0).id;
+            prefs.edit().putLong("current_account", currentAccountId).apply();
+        }
+    }
+
+    private void applySystemBars() {
+        Window w = getWindow();
+        w.setStatusBarColor(pal.bg);
+        w.setNavigationBarColor(pal.bg);
+        int flags = 0;
+        if (pal.lightStatus) flags |= View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+        if (pal.lightStatus && Build.VERSION.SDK_INT >= 26) flags |= View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+        w.getDecorView().setSystemUiVisibility(flags);
+    }
+
+    private int dp(float v) {
+        return XUi.dp(this, v);
+    }
+
+    private Account account(long id) {
+        Account a = accountCache.get(id);
+        if (a == null) {
+            a = db.getAccount(id);
+            if (a != null) accountCache.put(id, a);
+        }
+        return a;
+    }
+
+    private void clearAccountCache() {
+        accountCache.clear();
+    }
+
+    private LinearLayout vbox() {
+        LinearLayout v = new LinearLayout(this);
+        v.setOrientation(LinearLayout.VERTICAL);
+        v.setBackgroundColor(pal.bg);
+        return v;
+    }
+
+    private LinearLayout hbox() {
+        LinearLayout h = new LinearLayout(this);
+        h.setOrientation(LinearLayout.HORIZONTAL);
+        h.setGravity(Gravity.CENTER_VERTICAL);
+        h.setBackgroundColor(pal.bg);
+        return h;
+    }
+
+    private TextView tv(String text, float size, int color, boolean bold) {
+        return XUi.text(this, text, size, color, bold);
+    }
+
+    private View space(int widthDp, int heightDp) {
+        Space s = new Space(this);
+        s.setLayoutParams(new LinearLayout.LayoutParams(dp(widthDp), dp(heightDp)));
+        return s;
+    }
+
+    private XUi.IconView verifiedBadge(int sizeDp) {
+        XUi.IconView badge = new XUi.IconView(this, XUi.IconView.VERIFIED, XUi.BLUE);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(sizeDp), dp(sizeDp));
+        lp.setMargins(dp(3), 0, 0, 0);
+        badge.setLayoutParams(lp);
+        badge.setPadding(dp(1), dp(1), dp(1), dp(1));
+        return badge;
+    }
+
+    private TextView pill(String text, boolean filled) {
+        TextView t = tv(text, 14, filled ? (themeMode == 2 ? Color.WHITE : Color.BLACK) : pal.fg, true);
+        t.setGravity(Gravity.CENTER);
+        t.setPadding(dp(16), 0, dp(16), 0);
+        if (filled) {
+            int fill = themeMode == 2 ? 0xff0f1419 : 0xffeff3f4;
+            t.setBackground(XUi.rounded(fill, 999, this));
+        } else {
+            t.setBackground(XUi.stroked(Color.TRANSPARENT, pal.border, 999, this));
+        }
+        t.setMinHeight(dp(36));
+        return t;
+    }
+
+    private void setScreen(View root) {
+        setContentView(root);
+    }
+
+    private FrameLayout baseFrame() {
+        FrameLayout f = new FrameLayout(this);
+        f.setBackgroundColor(pal.bg);
+        f.setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        return f;
+    }
+
+    private LinearLayout topBar(String title, boolean back) {
+        LinearLayout bar = hbox();
+        bar.setPadding(dp(8), 0, dp(8), 0);
+        bar.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(53)));
+
+        if (back) {
+            XUi.IconView iv = new XUi.IconView(this, XUi.IconView.BACK, pal.fg);
+            iv.setLayoutParams(new LinearLayout.LayoutParams(dp(44), dp(44)));
+            iv.setPadding(dp(10), dp(10), dp(10), dp(10));
+            iv.setOnClickListener(v -> goBackFromSubscreen());
+            bar.addView(iv);
+        } else {
+            Account me = account(currentAccountId);
+            XUi.AvatarView av = new XUi.AvatarView(this, me);
+            LinearLayout.LayoutParams ap = new LinearLayout.LayoutParams(dp(32), dp(32));
+            ap.setMargins(dp(8), 0, dp(12), 0);
+            av.setLayoutParams(ap);
+            av.setOnClickListener(v -> showAccountSwitcher());
+            bar.addView(av);
+        }
+
+        TextView t = tv(title, 20, pal.fg, true);
+        LinearLayout.LayoutParams tp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f);
+        t.setLayoutParams(tp);
+        if (!back && title.isEmpty()) t.setGravity(Gravity.CENTER);
+        bar.addView(t);
+        return bar;
+    }
+
+    private LinearLayout xLogoTopBar() {
+        LinearLayout bar = hbox();
+        bar.setPadding(dp(8), 0, dp(8), 0);
+        bar.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(53)));
+
+        Account me = account(currentAccountId);
+        XUi.AvatarView av = new XUi.AvatarView(this, me);
+        LinearLayout.LayoutParams ap = new LinearLayout.LayoutParams(dp(32), dp(32));
+        ap.setMargins(dp(8), 0, 0, 0);
+        av.setLayoutParams(ap);
+        av.setOnClickListener(v -> showAccountSwitcher());
+        bar.addView(av);
+
+        FrameLayout center = new FrameLayout(this);
+        center.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f));
+        XUi.IconView x = new XUi.IconView(this, XUi.IconView.XLOGO, pal.fg);
+        FrameLayout.LayoutParams xp = new FrameLayout.LayoutParams(dp(31), dp(31), Gravity.CENTER);
+        x.setLayoutParams(xp);
+        x.setOnLongClickListener(v -> {
+            Toast.makeText(this, "Director Mode: long-press any post or profile", Toast.LENGTH_SHORT).show();
+            return true;
+        });
+        center.addView(x);
+        bar.addView(center);
+
+        Space rightBalance = new Space(this);
+        rightBalance.setLayoutParams(new LinearLayout.LayoutParams(dp(48), dp(40)));
+        bar.addView(rightBalance);
+
+        return bar;
+    }
+
+    private View tab(String label, boolean selected, View.OnClickListener click) {
+        LinearLayout wrap = vbox();
+        wrap.setGravity(Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+        wrap.setLayoutParams(new LinearLayout.LayoutParams(0, dp(53), 1f));
+        TextView t = tv(label, 15, selected ? pal.fg : pal.secondary, selected);
+        t.setGravity(Gravity.CENTER);
+        t.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        wrap.addView(t);
+        View line = new View(this);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(56), dp(4));
+        line.setLayoutParams(lp);
+        line.setBackground(selected ? XUi.rounded(XUi.BLUE, 999, this) : new ColorDrawable(Color.TRANSPARENT));
+        wrap.addView(line);
+        wrap.setOnClickListener(click);
+        return wrap;
+    }
+
+    private LinearLayout bottomNav(int selected) {
+        LinearLayout nav = hbox();
+        nav.setGravity(Gravity.CENTER);
+        nav.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(58)));
+        nav.setBackgroundColor(pal.bg);
+
+        addNavIcon(nav, XUi.IconView.HOME, selected == SCREEN_HOME, () -> renderHome());
+        addNavIcon(nav, XUi.IconView.SEARCH, selected == SCREEN_SEARCH, () -> renderSearch());
+        addNavIcon(nav, XUi.IconView.BELL, selected == SCREEN_NOTIFICATIONS, () -> renderNotifications());
+        addNavIcon(nav, XUi.IconView.MAIL, selected == SCREEN_MESSAGES, () -> renderMessages());
+        addNavIcon(nav, XUi.IconView.PROFILE, selected == SCREEN_PROFILE, () -> renderProfile(currentAccountId));
+
+        return nav;
+    }
+
+    private void addNavIcon(LinearLayout nav, int type, boolean active, Runnable action) {
+        FrameLayout slot = new FrameLayout(this);
+        slot.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f));
+        XUi.IconView iv = new XUi.IconView(this, type, pal.fg);
+        iv.setActive(active);
+        FrameLayout.LayoutParams ip = new FrameLayout.LayoutParams(dp(27), dp(27), Gravity.CENTER);
+        iv.setLayoutParams(ip);
+        slot.addView(iv);
+
+        if (type == XUi.IconView.BELL && db.unreadNotifications(currentAccountId) > 0) {
+            TextView dot = new TextView(this);
+            dot.setBackground(XUi.rounded(XUi.BLUE, 999, this));
+            FrameLayout.LayoutParams dpv = new FrameLayout.LayoutParams(dp(8), dp(8));
+            dpv.gravity = Gravity.CENTER;
+            dpv.leftMargin = dp(18);
+            dpv.bottomMargin = dp(16);
+            dot.setLayoutParams(dpv);
+            slot.addView(dot);
+        }
+        slot.setOnClickListener(v -> action.run());
+        nav.addView(slot);
+    }
+
+    private void addComposeFab(FrameLayout frame) {
+        FrameLayout fab = new FrameLayout(this);
+        fab.setBackground(XUi.rounded(XUi.BLUE, 999, this));
+        FrameLayout.LayoutParams fp = new FrameLayout.LayoutParams(dp(58), dp(58), Gravity.BOTTOM | Gravity.RIGHT);
+        fp.setMargins(0, 0, dp(18), dp(76));
+        fab.setLayoutParams(fp);
+        fab.setElevation(dp(8));
+        XUi.IconView composeIcon = new XUi.IconView(this, XUi.IconView.COMPOSE, Color.WHITE);
+        FrameLayout.LayoutParams pp = new FrameLayout.LayoutParams(dp(30), dp(30), Gravity.CENTER);
+        composeIcon.setLayoutParams(pp);
+        composeIcon.setPadding(dp(2), dp(2), dp(2), dp(2));
+        fab.addView(composeIcon);
+        fab.setOnClickListener(v -> {
+            composeDraft = "";
+            composeMediaPath = null;
+            composeAuthorId = currentAccountId;
+            showComposer(null, null);
+        });
+        frame.addView(fab);
+    }
+
+    private ScrollView scrollOf(LinearLayout body) {
+        ScrollView s = new ScrollView(this);
+        s.setFillViewport(true);
+        s.setBackgroundColor(pal.bg);
+        s.addView(body, new ScrollView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        return s;
+    }
+
+    private void renderHome() {
+        currentScreen = SCREEN_HOME;
+        currentProfileId = -1;
+        currentPostId = -1;
+        clearAccountCache();
+
+        FrameLayout frame = baseFrame();
+        LinearLayout shell = vbox();
+        shell.setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        frame.addView(shell);
+
+        shell.addView(xLogoTopBar());
+        LinearLayout tabs = hbox();
+        tabs.addView(tab("For you", homeForYou, v -> { homeForYou = true; renderHome(); }));
+        tabs.addView(tab("Following", !homeForYou, v -> { homeForYou = false; renderHome(); }));
+        shell.addView(tabs);
+        shell.addView(XUi.divider(this, pal.border));
+
+        LinearLayout feed = vbox();
+        List<Post> posts = homeForYou ? forYouPosts() : db.followingPosts(currentAccountId, 250);
+        if (posts.isEmpty()) {
+            feed.addView(emptyState("Your timeline is quiet", "Follow local accounts or create posts from any identity."));
+        } else {
+            for (Post p : posts) {
+                db.addView(currentAccountId, p.id);
+                feed.addView(postView(p, false));
+                feed.addView(XUi.divider(this, pal.border));
+            }
+        }
+        ScrollView scroll = scrollOf(feed);
+        scroll.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        shell.addView(scroll);
+        shell.addView(XUi.divider(this, pal.border));
+        shell.addView(bottomNav(SCREEN_HOME));
+        addComposeFab(frame);
+        setScreen(frame);
+    }
+
+    private List<Post> forYouPosts() {
+        List<Post> all = db.recentVisiblePosts(currentAccountId, 300);
+        ArrayList<Post> top = new ArrayList<>();
+        for (Post p : all) if (p.replyTo == null) top.add(p);
+        final long now = System.currentTimeMillis();
+        Collections.sort(top, (a, b) -> Double.compare(scorePost(b, now), scorePost(a, now)));
+        return top;
+    }
+
+    private double scorePost(Post p, long now) {
+        double hours = Math.max(0, (now - p.createdAt) / 3600000.0);
+        double freshness = 600.0 / (1.0 + hours / 5.0);
+        double engagement = Math.log10(p.views + 10) * 55.0 + p.likes * 1.7 + p.reposts * 4.5 + p.replies * 2.2;
+        double relation = db.isFollowing(currentAccountId, p.authorId) ? 260 : 0;
+        if (p.authorId == currentAccountId) relation += 90;
+        return p.viralBoost + freshness + engagement + relation;
+    }
+
+    private View emptyState(String title, String body) {
+        LinearLayout box = vbox();
+        box.setGravity(Gravity.CENTER);
+        box.setPadding(dp(36), dp(70), dp(36), dp(70));
+        TextView a = tv(title, 28, pal.fg, true);
+        a.setGravity(Gravity.CENTER);
+        box.addView(a);
+        TextView b = tv(body, 15, pal.secondary, false);
+        b.setGravity(Gravity.CENTER);
+        b.setPadding(0, dp(10), 0, 0);
+        box.addView(b);
+        return box;
+    }
+
+    private View postView(Post p, boolean detail) {
+        Account a = account(p.authorId);
+        if (a == null || !db.canSeeAccount(currentAccountId, a.id)) return new View(this);
+
+        LinearLayout row = hbox();
+        row.setGravity(Gravity.TOP);
+        row.setPadding(dp(12), dp(detail ? 14 : 10), dp(10), dp(10));
+        row.setBackgroundColor(pal.bg);
+        row.setClickable(true);
+        row.setOnClickListener(v -> {
+            if (!detail) renderPost(p.id);
+        });
+        row.setOnLongClickListener(v -> {
+            showDirectorMenu(p.id);
+            return true;
+        });
+
+        XUi.AvatarView av = new XUi.AvatarView(this, a);
+        LinearLayout.LayoutParams avp = new LinearLayout.LayoutParams(dp(detail ? 46 : 42), dp(detail ? 46 : 42));
+        avp.setMargins(0, 0, dp(10), 0);
+        av.setLayoutParams(avp);
+        av.setOnClickListener(v -> renderProfile(a.id));
+        row.addView(av);
+
+        LinearLayout content = vbox();
+        content.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        if (p.replyTo != null) {
+            Post parent = db.getPost(p.replyTo);
+            if (parent != null) {
+                Account pa = account(parent.authorId);
+                if (pa != null && db.canSeeAccount(currentAccountId, pa.id)) {
+                    TextView replying = tv("Replying to @" + pa.handle, 14, pal.secondary, false);
+                    replying.setPadding(0, 0, 0, dp(3));
+                    content.addView(replying);
+                }
+            }
+        }
+
+        LinearLayout meta = hbox();
+        TextView name = tv(a.name, detail ? 16 : 15, pal.fg, true);
+        name.setMaxLines(1);
+        name.setOnClickListener(v -> renderProfile(a.id));
+        meta.addView(name);
+
+        if (a.verified) meta.addView(verifiedBadge(17));
+
+        TextView handle = tv(" @" + a.handle + " · " + timeAgo(p.createdAt), 15, pal.secondary, false);
+        handle.setMaxLines(1);
+        LinearLayout.LayoutParams hp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        handle.setLayoutParams(hp);
+        meta.addView(handle);
+
+        XUi.IconView more = new XUi.IconView(this, XUi.IconView.MORE, pal.secondary);
+        more.setLayoutParams(new LinearLayout.LayoutParams(dp(30), dp(25)));
+        more.setPadding(dp(6), dp(5), dp(6), dp(5));
+        more.setOnClickListener(v -> showPostMenu(p.id));
+        meta.addView(more);
+        content.addView(meta);
+
+        if (!p.body.isEmpty()) {
+            TextView body = tv(p.body, detail ? 20 : 15, pal.fg, false);
+            body.setTextIsSelectable(false);
+            body.setLineSpacing(0, 1.08f);
+            body.setPadding(0, dp(2), dp(4), dp(7));
+            content.addView(body);
+        }
+
+        if (p.mediaPath != null && new File(p.mediaPath).exists()) {
+            ImageView image = new ImageView(this);
+            image.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            image.setImageBitmap(decodeScaled(p.mediaPath, 1200, 900));
+            image.setBackground(XUi.rounded(pal.surface, 14, this));
+            image.setClipToOutline(true);
+            image.setOutlineProvider(ViewOutlineProvider.BACKGROUND);
+            LinearLayout.LayoutParams ip = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(detail ? 330 : 260));
+            ip.setMargins(0, dp(4), dp(4), dp(7));
+            image.setLayoutParams(ip);
+            content.addView(image);
+        }
+
+        if (p.quoteOf != null) {
+            Post q = db.getPost(p.quoteOf);
+            if (q != null) content.addView(quotedPost(q));
+        }
+
+        content.addView(actionRow(p));
+        row.addView(content);
+
+        if (p.profileRepost && p.profileActorId > 0) {
+            Account reposter = account(p.profileActorId);
+            LinearLayout outer = vbox();
+            LinearLayout repostHeader = hbox();
+            repostHeader.setPadding(dp(52), dp(7), dp(12), 0);
+            XUi.IconView repostIcon = new XUi.IconView(this, XUi.IconView.REPOST, pal.secondary);
+            repostIcon.setLayoutParams(new LinearLayout.LayoutParams(dp(18), dp(18)));
+            repostIcon.setPadding(dp(2), dp(2), dp(2), dp(2));
+            repostHeader.addView(repostIcon);
+            String who = reposter == null ? "Reposted" : reposter.name + " reposted";
+            TextView label = tv("  " + who, 13, pal.secondary, true);
+            repostHeader.addView(label);
+            outer.addView(repostHeader);
+            outer.addView(row);
+            return outer;
+        }
+        return row;
+    }
+
+    private View quotedPost(Post q) {
+        Account qa = account(q.authorId);
+        LinearLayout card = vbox();
+        card.setPadding(dp(11), dp(10), dp(11), dp(10));
+        card.setBackground(XUi.stroked(Color.TRANSPARENT, pal.border, 14, this));
+        LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        cp.setMargins(0, dp(5), dp(4), dp(8));
+        card.setLayoutParams(cp);
+        if (qa == null || !db.canSeeAccount(currentAccountId, qa.id)) {
+            TextView unavailable = tv("This post is unavailable", 14, pal.secondary, false);
+            unavailable.setPadding(0, dp(2), 0, dp(2));
+            card.addView(unavailable);
+            return card;
+        }
+        if (qa != null) {
+            LinearLayout meta = hbox();
+            TextView n = tv(qa.name, 14, pal.fg, true);
+            meta.addView(n);
+            if (qa.verified) meta.addView(verifiedBadge(15));
+            TextView h = tv(" @" + qa.handle + " · " + timeAgo(q.createdAt), 14, pal.secondary, false);
+            meta.addView(h);
+            card.addView(meta);
+        }
+        TextView body = tv(q.body, 14, pal.fg, false);
+        body.setPadding(0, dp(4), 0, 0);
+        card.addView(body);
+        card.setOnClickListener(v -> renderPost(q.id));
+        return card;
+    }
+
+    private LinearLayout actionRow(Post p) {
+        LinearLayout actions = hbox();
+        actions.setGravity(Gravity.CENTER_VERTICAL);
+        actions.setPadding(0, dp(3), 0, 0);
+        actions.addView(actionItem(XUi.IconView.REPLY, p.replies, pal.secondary, false, v -> {
+            composeDraft = "";
+            composeMediaPath = null;
+            composeAuthorId = currentAccountId;
+            showComposer(p.id, null);
+        }));
+        boolean reposted = db.hasInteraction(currentAccountId, p.id, "repost");
+        actions.addView(actionItem(XUi.IconView.REPOST, p.reposts, reposted ? XUi.GREEN : pal.secondary, reposted, v -> {
+            db.toggleInteraction(currentAccountId, p.id, "repost");
+            refreshCurrent();
+        }));
+        boolean liked = db.hasInteraction(currentAccountId, p.id, "like");
+        actions.addView(actionItem(XUi.IconView.HEART, p.likes, liked ? XUi.PINK : pal.secondary, liked, v -> {
+            db.toggleInteraction(currentAccountId, p.id, "like");
+            refreshCurrent();
+        }));
+        actions.addView(actionItem(XUi.IconView.VIEWS, p.views, pal.secondary, false, v -> renderPost(p.id)));
+        boolean bookmarked = db.hasInteraction(currentAccountId, p.id, "bookmark");
+        actions.addView(actionItem(XUi.IconView.BOOKMARK, -1, bookmarked ? XUi.BLUE : pal.secondary, bookmarked, v -> {
+            db.toggleInteraction(currentAccountId, p.id, "bookmark");
+            refreshCurrent();
+        }));
+        actions.addView(actionItem(XUi.IconView.SHARE, -1, pal.secondary, false, v -> showShareMenu(p.id)));
+        return actions;
+    }
+
+    private View actionItem(int icon, long count, int color, boolean active, View.OnClickListener click) {
+        LinearLayout item = hbox();
+        item.setGravity(Gravity.CENTER_VERTICAL);
+        item.setLayoutParams(new LinearLayout.LayoutParams(0, dp(32), icon == XUi.IconView.SHARE || icon == XUi.IconView.BOOKMARK ? .7f : 1f));
+        XUi.IconView iv = new XUi.IconView(this, icon, color);
+        iv.setActive(active);
+        iv.setLayoutParams(new LinearLayout.LayoutParams(dp(26), dp(26)));
+        iv.setPadding(dp(5), dp(5), dp(5), dp(5));
+        item.addView(iv);
+        if (count >= 0) {
+            TextView c = tv(formatCount(count), 12, color, false);
+            item.addView(c);
+        }
+        item.setOnClickListener(click);
+        return item;
+    }
+
+    private void renderPost(long postId) {
+        Post p = db.getPost(postId);
+        if (p == null || !db.canSeeAccount(currentAccountId, p.authorId)) {
+            Toast.makeText(this, "This post isn't available from this account", Toast.LENGTH_SHORT).show();
+            renderHome();
+            return;
+        }
+        currentScreen = SCREEN_POST;
+        currentPostId = postId;
+
+        FrameLayout frame = baseFrame();
+        LinearLayout shell = vbox();
+        shell.setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        frame.addView(shell);
+
+        shell.addView(topBar("Post", true));
+        shell.addView(XUi.divider(this, pal.border));
+
+        LinearLayout body = vbox();
+        db.addView(currentAccountId, p.id);
+        body.addView(postView(p, true));
+        body.addView(XUi.divider(this, pal.border));
+
+        List<Post> replies = db.repliesTo(p.id, currentAccountId);
+        for (Post r : replies) {
+            db.addView(currentAccountId, r.id);
+            body.addView(postView(r, false));
+            body.addView(XUi.divider(this, pal.border));
+        }
+
+        ScrollView scroll = scrollOf(body);
+        scroll.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        shell.addView(scroll);
+
+        LinearLayout reply = hbox();
+        reply.setPadding(dp(12), dp(7), dp(12), dp(7));
+        Account me = account(currentAccountId);
+        XUi.AvatarView av = new XUi.AvatarView(this, me);
+        av.setLayoutParams(new LinearLayout.LayoutParams(dp(34), dp(34)));
+        reply.addView(av);
+        TextView prompt = tv("Post your reply", 15, pal.secondary, false);
+        prompt.setPadding(dp(12), 0, 0, 0);
+        prompt.setLayoutParams(new LinearLayout.LayoutParams(0, dp(42), 1f));
+        reply.addView(prompt);
+        reply.setOnClickListener(v -> {
+            composeDraft = "";
+            composeMediaPath = null;
+            composeAuthorId = currentAccountId;
+            showComposer(p.id, null);
+        });
+        shell.addView(XUi.divider(this, pal.border));
+        shell.addView(reply);
+        shell.addView(bottomNav(0));
+        setScreen(frame);
+    }
+
+    private void renderProfile(long accountId) {
+        Account a = db.getAccount(accountId);
+        if (a == null) return;
+        if (!db.canSeeAccount(currentAccountId, accountId)) {
+            Toast.makeText(this, "This account isn't available from the current account", Toast.LENGTH_SHORT).show();
+            renderHome();
+            return;
+        }
+        currentScreen = SCREEN_PROFILE;
+        currentProfileId = accountId;
+        clearAccountCache();
+
+        FrameLayout frame = baseFrame();
+        LinearLayout shell = vbox();
+        shell.setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        frame.addView(shell);
+
+        LinearLayout bar = topBar(a.name, true);
+        TextView count = tv(formatCount(db.postsByAccount(accountId, true).size()) + " posts", 12, pal.secondary, false);
+        count.setGravity(Gravity.CENTER_VERTICAL | Gravity.RIGHT);
+        count.setPadding(dp(8), 0, dp(8), 0);
+        bar.addView(count);
+        shell.addView(bar);
+
+        LinearLayout body = vbox();
+        body.setOnLongClickListener(v -> {
+            showEditAccount(accountId);
+            return true;
+        });
+
+        FrameLayout hero = new FrameLayout(this);
+        hero.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(206)));
+        ImageView banner = new ImageView(this);
+        banner.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        banner.setBackgroundColor(pal.surface);
+        if (a.bannerPath != null && new File(a.bannerPath).exists()) {
+            banner.setImageBitmap(decodeScaled(a.bannerPath, 1600, 500));
+        }
+        FrameLayout.LayoutParams bp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(150));
+        banner.setLayoutParams(bp);
+        hero.addView(banner);
+
+        XUi.AvatarView avatar = new XUi.AvatarView(this, a);
+        FrameLayout.LayoutParams ap = new FrameLayout.LayoutParams(dp(88), dp(88));
+        ap.leftMargin = dp(14);
+        ap.topMargin = dp(108);
+        avatar.setLayoutParams(ap);
+        avatar.setBackground(XUi.stroked(pal.bg, pal.bg, 999, this));
+        avatar.setOnLongClickListener(v -> {
+            showEditAccount(accountId);
+            return true;
+        });
+        hero.addView(avatar);
+
+        TextView action;
+        if (accountId == currentAccountId) {
+            action = pill("Edit profile", false);
+            action.setOnClickListener(v -> showEditAccount(accountId));
+        } else {
+            boolean following = db.isFollowing(currentAccountId, accountId);
+            action = pill(following ? "Following" : "Follow", !following);
+            action.setOnClickListener(v -> {
+                db.toggleFollow(currentAccountId, accountId);
+                renderProfile(accountId);
+            });
+        }
+        FrameLayout.LayoutParams fp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(36), Gravity.RIGHT | Gravity.BOTTOM);
+        fp.setMargins(0, 0, dp(14), dp(13));
+        action.setLayoutParams(fp);
+        hero.addView(action);
+        body.addView(hero);
+
+        LinearLayout info = vbox();
+        info.setPadding(dp(14), 0, dp(14), dp(14));
+        LinearLayout nameRow = hbox();
+        nameRow.addView(tv(a.name, 21, pal.fg, true));
+        if (a.verified) nameRow.addView(verifiedBadge(19));
+        body.addView(info);
+        info.addView(nameRow);
+        info.addView(tv("@" + a.handle, 15, pal.secondary, false));
+
+        if (a.bio != null && !a.bio.isEmpty()) {
+            TextView bio = tv(a.bio, 15, pal.fg, false);
+            bio.setPadding(0, dp(11), 0, dp(10));
+            info.addView(bio);
+        }
+
+        TextView joined = tv("Joined this local universe", 15, pal.secondary, false);
+        joined.setPadding(0, dp(3), 0, dp(10));
+        info.addView(joined);
+
+        LinearLayout stats = hbox();
+        long following = a.displayFollowing >= 0 ? a.displayFollowing : db.actualFollowing(a.id);
+        long followers = a.displayFollowers >= 0 ? a.displayFollowers : db.actualFollowers(a.id);
+        TextView f1 = tv(formatCount(following) + " ", 14, pal.fg, true);
+        stats.addView(f1);
+        stats.addView(tv("Following", 14, pal.secondary, false));
+        stats.addView(space(18, 1));
+        TextView f2 = tv(formatCount(followers) + " ", 14, pal.fg, true);
+        stats.addView(f2);
+        stats.addView(tv("Followers", 14, pal.secondary, false));
+        info.addView(stats);
+
+        LinearLayout tabs = hbox();
+        String[] names = {"Posts", "Replies", "Media", "Likes"};
+        for (int i = 0; i < names.length; i++) {
+            final int ix = i;
+            tabs.addView(tab(names[i], profileTab == i, v -> {
+                profileTab = ix;
+                renderProfile(accountId);
+            }));
+        }
+        body.addView(tabs);
+        body.addView(XUi.divider(this, pal.border));
+
+        List<Post> posts;
+        if (profileTab == 0) posts = db.profileTimeline(accountId, currentAccountId);
+        else if (profileTab == 1) posts = db.postsByAccount(accountId, true);
+        else if (profileTab == 3) posts = db.likedPosts(accountId, currentAccountId);
+        else {
+            posts = new ArrayList<>();
+            for (Post p : db.postsByAccount(accountId, true)) if (p.mediaPath != null) posts.add(p);
+        }
+
+        if (posts.isEmpty()) {
+            body.addView(emptyState(profileTab == 2 ? "No media yet" : "Nothing here yet", "This is a local profile, so you decide what appears."));
+        } else {
+            for (Post p : posts) {
+                body.addView(postView(p, false));
+                body.addView(XUi.divider(this, pal.border));
+            }
+        }
+
+        ScrollView scroll = scrollOf(body);
+        scroll.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        shell.addView(scroll);
+        shell.addView(bottomNav(accountId == currentAccountId ? SCREEN_PROFILE : 0));
+        addComposeFab(frame);
+        setScreen(frame);
+    }
+
+    private void renderSearch() {
+        currentScreen = SCREEN_SEARCH;
+        FrameLayout frame = baseFrame();
+        LinearLayout shell = vbox();
+        shell.setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        frame.addView(shell);
+
+        LinearLayout top = hbox();
+        top.setPadding(dp(12), dp(7), dp(12), dp(7));
+        top.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(55)));
+        Account me = account(currentAccountId);
+        XUi.AvatarView av = new XUi.AvatarView(this, me);
+        LinearLayout.LayoutParams ap = new LinearLayout.LayoutParams(dp(32), dp(32));
+        ap.setMargins(0, 0, dp(10), 0);
+        av.setLayoutParams(ap);
+        av.setOnClickListener(v -> showAccountSwitcher());
+        top.addView(av);
+
+        EditText search = new EditText(this);
+        search.setSingleLine(true);
+        search.setTextSize(15);
+        search.setTextColor(pal.fg);
+        search.setHintTextColor(pal.secondary);
+        search.setHint("Search");
+        search.setPadding(dp(16), 0, dp(16), 0);
+        search.setBackground(XUi.rounded(pal.surface, 999, this));
+        search.setLayoutParams(new LinearLayout.LayoutParams(0, dp(38), 1f));
+        top.addView(search);
+        shell.addView(top);
+        shell.addView(XUi.divider(this, pal.border));
+
+        LinearLayout results = vbox();
+        ScrollView scroll = scrollOf(results);
+        scroll.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        shell.addView(scroll);
+        shell.addView(XUi.divider(this, pal.border));
+        shell.addView(bottomNav(SCREEN_SEARCH));
+
+        Runnable update = () -> populateSearch(results, search.getText().toString().trim());
+        search.addTextChangedListener(new TextWatcher() {
+            public void beforeTextChanged(CharSequence s, int st, int c, int a) {}
+            public void onTextChanged(CharSequence s, int st, int before, int count) { update.run(); }
+            public void afterTextChanged(Editable e) {}
+        });
+        update.run();
+        setScreen(frame);
+    }
+
+    private void populateSearch(LinearLayout results, String q) {
+        results.removeAllViews();
+        if (q.isEmpty()) {
+            TextView h = tv("Explore your universe", 22, pal.fg, true);
+            h.setPadding(dp(16), dp(22), dp(16), dp(8));
+            results.addView(h);
+            for (Account a : db.listVisibleAccounts(currentAccountId)) results.addView(accountRow(a));
+            return;
+        }
+
+        List<Account> accounts = db.searchAccounts(q, currentAccountId);
+        if (!accounts.isEmpty()) {
+            TextView h = tv("People", 20, pal.fg, true);
+            h.setPadding(dp(16), dp(14), dp(16), dp(7));
+            results.addView(h);
+            for (Account a : accounts) results.addView(accountRow(a));
+            results.addView(XUi.divider(this, pal.border));
+        }
+
+        List<Post> posts = db.searchPosts(q, currentAccountId);
+        if (!posts.isEmpty()) {
+            TextView h = tv("Posts", 20, pal.fg, true);
+            h.setPadding(dp(16), dp(14), dp(16), dp(7));
+            results.addView(h);
+            for (Post p : posts) {
+                results.addView(postView(p, false));
+                results.addView(XUi.divider(this, pal.border));
+            }
+        }
+
+        if (accounts.isEmpty() && posts.isEmpty()) results.addView(emptyState("No results", "Try another local name, handle or phrase."));
+    }
+
+    private View accountRow(Account a) {
+        LinearLayout row = hbox();
+        row.setPadding(dp(14), dp(10), dp(14), dp(10));
+        XUi.AvatarView av = new XUi.AvatarView(this, a);
+        LinearLayout.LayoutParams ap = new LinearLayout.LayoutParams(dp(45), dp(45));
+        ap.setMargins(0, 0, dp(11), 0);
+        av.setLayoutParams(ap);
+        row.addView(av);
+
+        LinearLayout labels = vbox();
+        labels.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        LinearLayout nrow = hbox();
+        nrow.addView(tv(a.name, 15, pal.fg, true));
+        if (a.verified) nrow.addView(verifiedBadge(16));
+        labels.addView(nrow);
+        labels.addView(tv("@" + a.handle, 14, pal.secondary, false));
+        if (a.bio != null && !a.bio.isEmpty()) {
+            TextView bio = tv(a.bio, 14, pal.fg, false);
+            bio.setPadding(0, dp(3), 0, 0);
+            labels.addView(bio);
+        }
+        row.addView(labels);
+        row.setOnClickListener(v -> renderProfile(a.id));
+        row.setOnLongClickListener(v -> { showEditAccount(a.id); return true; });
+        return row;
+    }
+
+    private void renderNotifications() {
+        currentScreen = SCREEN_NOTIFICATIONS;
+        db.markNotificationsRead(currentAccountId);
+
+        FrameLayout frame = baseFrame();
+        LinearLayout shell = vbox();
+        shell.setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        frame.addView(shell);
+        shell.addView(topBar("Notifications", false));
+        shell.addView(XUi.divider(this, pal.border));
+
+        LinearLayout list = vbox();
+        List<LocalNotification> ns = db.notifications(currentAccountId);
+        if (ns.isEmpty()) {
+            list.addView(emptyState("Nothing to see here — yet", "Likes, reposts, follows and replies from your local accounts will appear here."));
+        } else {
+            for (LocalNotification n : ns) {
+                list.addView(notificationRow(n));
+                list.addView(XUi.divider(this, pal.border));
+            }
+        }
+        ScrollView scroll = scrollOf(list);
+        scroll.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        shell.addView(scroll);
+        shell.addView(bottomNav(SCREEN_NOTIFICATIONS));
+        setScreen(frame);
+    }
+
+    private View notificationRow(LocalNotification n) {
+        Account actor = account(n.actorId);
+        LinearLayout row = hbox();
+        row.setGravity(Gravity.TOP);
+        row.setPadding(dp(18), dp(12), dp(14), dp(12));
+        XUi.IconView kind = new XUi.IconView(this,
+                "follow".equals(n.type) ? XUi.IconView.PLUS :
+                        ("like".equals(n.type) ? XUi.IconView.HEART :
+                                ("repost".equals(n.type) ? XUi.IconView.REPOST : XUi.IconView.REPLY)),
+                "like".equals(n.type) ? XUi.PINK : ("repost".equals(n.type) ? XUi.GREEN : XUi.BLUE));
+        kind.setLayoutParams(new LinearLayout.LayoutParams(dp(31), dp(31)));
+        kind.setPadding(dp(5), dp(5), dp(5), dp(5));
+        row.addView(kind);
+        LinearLayout content = vbox();
+        content.setPadding(dp(8), 0, 0, 0);
+        content.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        if (actor != null) {
+            XUi.AvatarView av = new XUi.AvatarView(this, actor);
+            av.setLayoutParams(new LinearLayout.LayoutParams(dp(34), dp(34)));
+            content.addView(av);
+            String verb = "follow".equals(n.type) ? " followed you" :
+                    ("like".equals(n.type) ? " liked your post" :
+                            ("repost".equals(n.type) ? " reposted your post" : " replied to your post"));
+            TextView line = tv(actor.name + verb, 15, pal.fg, false);
+            line.setPadding(0, dp(7), 0, 0);
+            content.addView(line);
+        }
+        if (n.postId != null) {
+            Post p = db.getPost(n.postId);
+            if (p != null) {
+                TextView excerpt = tv(p.body, 14, pal.secondary, false);
+                excerpt.setMaxLines(3);
+                excerpt.setPadding(0, dp(4), 0, 0);
+                content.addView(excerpt);
+            }
+        }
+        row.addView(content);
+        if (n.postId != null) row.setOnClickListener(v -> renderPost(n.postId));
+        else if (actor != null) row.setOnClickListener(v -> renderProfile(actor.id));
+        return row;
+    }
+
+    private void renderMessages() {
+        currentScreen = SCREEN_MESSAGES;
+        FrameLayout frame = baseFrame();
+        LinearLayout shell = vbox();
+        shell.setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        frame.addView(shell);
+        shell.addView(topBar("Messages", false));
+        shell.addView(XUi.divider(this, pal.border));
+
+        LinearLayout list = vbox();
+        List<Account> accounts = db.listVisibleAccounts(currentAccountId);
+        Collections.sort(accounts, (a, b) -> Boolean.compare(db.hasMessages(currentAccountId, b.id), db.hasMessages(currentAccountId, a.id)));
+        boolean any = false;
+        for (Account a : accounts) {
+            if (a.id == currentAccountId) continue;
+            any = true;
+            LinearLayout row = (LinearLayout) accountRow(a);
+            row.setOnClickListener(v -> renderChat(a.id));
+            list.addView(row);
+            list.addView(XUi.divider(this, pal.border));
+        }
+        if (!any) list.addView(emptyState("No one else is here", "Create another local account to start a private conversation."));
+
+        ScrollView scroll = scrollOf(list);
+        scroll.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        shell.addView(scroll);
+        shell.addView(bottomNav(SCREEN_MESSAGES));
+        setScreen(frame);
+    }
+
+    private void renderChat(long otherId) {
+        Account other = db.getAccount(otherId);
+        if (other == null) return;
+        if (!db.canSeeAccount(currentAccountId, otherId)) {
+            Toast.makeText(this, "This account isn't available from the current account", Toast.LENGTH_SHORT).show();
+            renderMessages();
+            return;
+        }
+        currentScreen = SCREEN_CHAT;
+        currentChatId = otherId;
+
+        LinearLayout root = vbox();
+        root.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+        LinearLayout bar = topBar(other.name, true);
+        XUi.AvatarView av = new XUi.AvatarView(this, other);
+        av.setLayoutParams(new LinearLayout.LayoutParams(dp(32), dp(32)));
+        bar.addView(av);
+        root.addView(bar);
+        root.addView(XUi.divider(this, pal.border));
+
+        LinearLayout messages = vbox();
+        messages.setPadding(dp(12), dp(12), dp(12), dp(12));
+        List<DirectMessage> convo = db.conversation(currentAccountId, otherId);
+        if (convo.isEmpty()) {
+            messages.addView(emptyState("Start a conversation", "Messages are stored only on this device."));
+        } else {
+            for (DirectMessage m : convo) messages.addView(messageBubble(m));
+        }
+        ScrollView scroll = scrollOf(messages);
+        scroll.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        root.addView(scroll);
+
+        root.addView(XUi.divider(this, pal.border));
+        LinearLayout composer = hbox();
+        composer.setPadding(dp(10), dp(8), dp(10), dp(8));
+        EditText input = new EditText(this);
+        input.setSingleLine(false);
+        input.setMaxLines(4);
+        input.setTextSize(15);
+        input.setTextColor(pal.fg);
+        input.setHintTextColor(pal.secondary);
+        input.setHint("Start a message");
+        input.setPadding(dp(14), dp(8), dp(14), dp(8));
+        input.setBackground(XUi.stroked(pal.surface, pal.border, 18, this));
+        input.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        composer.addView(input);
+        TextView send = pill("Send", true);
+        LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(38));
+        sp.setMargins(dp(8), 0, 0, 0);
+        send.setLayoutParams(sp);
+        send.setOnClickListener(v -> {
+            String body = input.getText().toString().trim();
+            if (!body.isEmpty()) {
+                db.sendMessage(currentAccountId, otherId, body);
+                renderChat(otherId);
+            }
+        });
+        composer.addView(send);
+        root.addView(composer);
+        setScreen(root);
+        scroll.post(() -> scroll.fullScroll(View.FOCUS_DOWN));
+    }
+
+    private View messageBubble(DirectMessage m) {
+        boolean mine = m.senderId == currentAccountId;
+        LinearLayout line = hbox();
+        line.setGravity(mine ? Gravity.RIGHT : Gravity.LEFT);
+        line.setPadding(0, dp(4), 0, dp(4));
+        TextView bubble = tv(m.body, 15, mine ? Color.WHITE : pal.fg, false);
+        bubble.setPadding(dp(13), dp(9), dp(13), dp(9));
+        bubble.setBackground(XUi.rounded(mine ? XUi.BLUE : pal.surface, 18, this));
+        bubble.setMaxWidth(dp(290));
+        line.addView(bubble);
+        return line;
+    }
+
+    private void renderBookmarks() {
+        currentScreen = SCREEN_BOOKMARKS;
+        LinearLayout shell = vbox();
+        shell.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        shell.addView(topBar("Bookmarks", true));
+        shell.addView(XUi.divider(this, pal.border));
+
+        LinearLayout list = vbox();
+        List<Post> all = db.recentVisiblePosts(currentAccountId, 500);
+        int count = 0;
+        for (Post p : all) {
+            if (db.hasInteraction(currentAccountId, p.id, "bookmark")) {
+                count++;
+                list.addView(postView(p, false));
+                list.addView(XUi.divider(this, pal.border));
+            }
+        }
+        if (count == 0) list.addView(emptyState("Save posts for later", "Bookmarked posts from this local account will show up here."));
+        ScrollView scroll = scrollOf(list);
+        scroll.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        shell.addView(scroll);
+        shell.addView(bottomNav(0));
+        setScreen(shell);
+    }
+
+    private void showComposer(Long replyTo, Long quoteOf) {
+        composeReplyTo = replyTo;
+        composeQuoteOf = quoteOf;
+        if (composeAuthorId <= 0 || db.getAccount(composeAuthorId) == null) composeAuthorId = currentAccountId;
+
+        Dialog d = new Dialog(this);
+        d.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        LinearLayout root = vbox();
+        root.setPadding(dp(12), dp(8), dp(12), dp(10));
+
+        LinearLayout top = hbox();
+        XUi.IconView close = new XUi.IconView(this, XUi.IconView.CLOSE, pal.fg);
+        close.setLayoutParams(new LinearLayout.LayoutParams(dp(38), dp(38)));
+        close.setPadding(dp(10), dp(10), dp(10), dp(10));
+        close.setOnClickListener(v -> d.dismiss());
+        top.addView(close);
+        Space flex = new Space(this);
+        flex.setLayoutParams(new LinearLayout.LayoutParams(0, 1, 1f));
+        top.addView(flex);
+        TextView postButton = pill(replyTo == null ? "Post" : "Reply", true);
+        postButton.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(36)));
+        top.addView(postButton);
+        root.addView(top);
+
+        Account author = account(composeAuthorId);
+        LinearLayout identity = hbox();
+        identity.setPadding(dp(3), dp(10), 0, dp(3));
+        XUi.AvatarView av = new XUi.AvatarView(this, author);
+        av.setLayoutParams(new LinearLayout.LayoutParams(dp(42), dp(42)));
+        identity.addView(av);
+        LinearLayout labels = vbox();
+        labels.setPadding(dp(10), 0, 0, 0);
+        LinearLayout authorNameRow = hbox();
+        authorNameRow.addView(tv(author.name, 15, pal.fg, true));
+        if (author.verified) authorNameRow.addView(verifiedBadge(16));
+        labels.addView(authorNameRow);
+        labels.addView(tv("Posting as @" + author.handle + "  ▾", 13, XUi.BLUE, false));
+        identity.addView(labels);
+        identity.setOnClickListener(v -> {
+            composeDraft = ((EditText) root.findViewWithTag("composer_body")).getText().toString();
+            d.dismiss();
+            chooseComposerAuthor(replyTo, quoteOf);
+        });
+        root.addView(identity);
+
+        if (replyTo != null) {
+            Post parent = db.getPost(replyTo);
+            Account pa = parent == null ? null : account(parent.authorId);
+            if (pa != null) {
+                TextView replying = tv("Replying to @" + pa.handle, 14, pal.secondary, false);
+                replying.setPadding(dp(55), dp(5), 0, dp(4));
+                root.addView(replying);
+            }
+        }
+
+        EditText body = new EditText(this);
+        body.setTag("composer_body");
+        body.setText(composeDraft);
+        body.setTextSize(20);
+        body.setTextColor(pal.fg);
+        body.setHintTextColor(pal.secondary);
+        body.setHint(replyTo == null ? "What is happening?!" : "Post your reply");
+        body.setGravity(Gravity.TOP);
+        body.setBackgroundColor(Color.TRANSPARENT);
+        body.setPadding(dp(54), dp(8), dp(8), dp(12));
+        body.setMinHeight(dp(170));
+        root.addView(body);
+
+        if (composeMediaPath != null && new File(composeMediaPath).exists()) {
+            ImageView image = new ImageView(this);
+            image.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            image.setImageBitmap(decodeScaled(composeMediaPath, 1200, 900));
+            image.setBackground(XUi.rounded(pal.surface, 16, this));
+            image.setClipToOutline(true);
+            image.setOutlineProvider(ViewOutlineProvider.BACKGROUND);
+            LinearLayout.LayoutParams ip = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(260));
+            ip.setMargins(dp(54), 0, dp(4), dp(10));
+            image.setLayoutParams(ip);
+            root.addView(image);
+        }
+
+        if (quoteOf != null) {
+            Post q = db.getPost(quoteOf);
+            if (q != null) {
+                View qv = quotedPost(q);
+                LinearLayout.LayoutParams qp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                qp.setMargins(dp(54), 0, dp(4), dp(10));
+                qv.setLayoutParams(qp);
+                root.addView(qv);
+            }
+        }
+
+        root.addView(XUi.divider(this, pal.border));
+        LinearLayout tools = hbox();
+        tools.setPadding(dp(48), dp(5), 0, 0);
+        XUi.IconView photo = new XUi.IconView(this, XUi.IconView.PHOTO, XUi.BLUE);
+        photo.setLayoutParams(new LinearLayout.LayoutParams(dp(40), dp(40)));
+        photo.setPadding(dp(8), dp(8), dp(8), dp(8));
+        photo.setOnClickListener(v -> {
+            composeDraft = body.getText().toString();
+            d.dismiss();
+            pickImage(PICK_POST_MEDIA);
+        });
+        tools.addView(photo);
+        TextView local = tv("Offline · local universe", 13, XUi.BLUE, true);
+        local.setPadding(dp(8), 0, 0, 0);
+        tools.addView(local);
+        root.addView(tools);
+
+        postButton.setOnClickListener(v -> {
+            String text = body.getText().toString().trim();
+            if (text.isEmpty() && (composeMediaPath == null || composeMediaPath.isEmpty()) && quoteOf == null) {
+                Toast.makeText(this, "Write something first", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            db.insertPost(composeAuthorId, text, composeMediaPath, replyTo, quoteOf);
+            composeDraft = "";
+            composeMediaPath = null;
+            composeReplyTo = null;
+            composeQuoteOf = null;
+            d.dismiss();
+            if (replyTo != null) renderPost(replyTo); else renderHome();
+        });
+
+        d.setContentView(root);
+        Window w = d.getWindow();
+        if (w != null) {
+            w.setBackgroundDrawable(new ColorDrawable(pal.bg));
+            w.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT);
+            w.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+        }
+        d.setOnShowListener(x -> {
+            Window ww = d.getWindow();
+            if (ww != null) ww.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT);
+            body.requestFocus();
+            body.setSelection(body.getText().length());
+        });
+        d.show();
+    }
+
+    private void chooseComposerAuthor(Long replyTo, Long quoteOf) {
+        List<Account> accounts = db.listAccounts();
+        String[] labels = new String[accounts.size()];
+        int checked = 0;
+        for (int i = 0; i < accounts.size(); i++) {
+            Account a = accounts.get(i);
+            labels[i] = a.name + "  @" + a.handle;
+            if (a.id == composeAuthorId) checked = i;
+        }
+        final int initial = checked;
+        new AlertDialog.Builder(this)
+                .setTitle("Post as")
+                .setSingleChoiceItems(labels, checked, null)
+                .setPositiveButton("Use account", (dialog, which) -> {
+                    AlertDialog ad = (AlertDialog) dialog;
+                    int pos = ad.getListView().getCheckedItemPosition();
+                    if (pos < 0) pos = initial;
+                    composeAuthorId = accounts.get(pos).id;
+                    showComposer(replyTo, quoteOf);
+                })
+                .setNegativeButton("Cancel", (dialog, which) -> showComposer(replyTo, quoteOf))
+                .show();
+    }
+
+    private void showAccountSwitcher() {
+        Dialog d = new Dialog(this);
+        d.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        LinearLayout root = vbox();
+        root.setPadding(dp(16), dp(14), dp(16), dp(18));
+
+        TextView title = tv("Accounts", 22, pal.fg, true);
+        title.setPadding(0, 0, 0, dp(10));
+        root.addView(title);
+
+        for (Account a : db.listAccounts()) {
+            LinearLayout row = hbox();
+            row.setPadding(0, dp(6), 0, dp(6));
+            XUi.AvatarView av = new XUi.AvatarView(this, a);
+            LinearLayout.LayoutParams ap = new LinearLayout.LayoutParams(dp(43), dp(43));
+            ap.setMargins(0, 0, dp(10), 0);
+            av.setLayoutParams(ap);
+            row.addView(av);
+            LinearLayout labels = vbox();
+            labels.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            LinearLayout accountNameRow = hbox();
+            accountNameRow.addView(tv(a.name, 15, pal.fg, true));
+            if (a.verified) accountNameRow.addView(verifiedBadge(16));
+            labels.addView(accountNameRow);
+            labels.addView(tv("@" + a.handle, 14, pal.secondary, false));
+            row.addView(labels);
+            if (a.id == currentAccountId) {
+                XUi.IconView selectedCheck = new XUi.IconView(this, XUi.IconView.CHECK, XUi.BLUE);
+                selectedCheck.setLayoutParams(new LinearLayout.LayoutParams(dp(24), dp(24)));
+                selectedCheck.setPadding(dp(2), dp(2), dp(2), dp(2));
+                row.addView(selectedCheck);
+            }
+            row.setOnClickListener(v -> {
+                currentAccountId = a.id;
+                prefs.edit().putLong("current_account", currentAccountId).apply();
+                d.dismiss();
+                renderHome();
+            });
+            row.setOnLongClickListener(v -> { d.dismiss(); showEditAccount(a.id); return true; });
+            root.addView(row);
+        }
+
+        root.addView(XUi.divider(this, pal.border));
+        root.addView(menuLine("Create a new account", () -> { d.dismiss(); showCreateAccount(); }));
+        root.addView(menuLine("Bookmarks", () -> { d.dismiss(); renderBookmarks(); }));
+        root.addView(menuLine("Appearance", () -> { d.dismiss(); showAppearance(); }));
+        root.addView(menuLine("Export universe", () -> { d.dismiss(); exportUniversePicker(); }));
+        root.addView(menuLine("Import universe", () -> { d.dismiss(); importUniversePicker(); }));
+        root.addView(menuLine("Reset demo universe", () -> {
+            d.dismiss();
+            confirmReset();
+        }));
+
+        ScrollView scroll = scrollOf(root);
+        d.setContentView(scroll);
+        Window w = d.getWindow();
+        if (w != null) {
+            w.setBackgroundDrawable(new ColorDrawable(pal.bg));
+            w.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.WRAP_CONTENT);
+            w.setGravity(Gravity.BOTTOM);
+        }
+        d.setOnShowListener(x -> {
+            Window ww = d.getWindow();
+            if (ww != null) {
+                ww.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.WRAP_CONTENT);
+                ww.setGravity(Gravity.BOTTOM);
+            }
+        });
+        d.show();
+    }
+
+    private View menuLine(String text, Runnable action) {
+        TextView row = tv(text, 16, pal.fg, true);
+        row.setPadding(0, dp(15), 0, dp(15));
+        row.setOnClickListener(v -> action.run());
+        return row;
+    }
+
+    private void showCreateAccount() {
+        LinearLayout form = dialogForm();
+        EditText name = field("Name", false);
+        EditText handle = field("Handle", false);
+        EditText bio = field("Bio", true);
+        CheckBox verified = checkbox("Verified badge");
+        CheckBox priv = checkbox("Private account");
+        form.addView(name);
+        form.addView(handle);
+        form.addView(bio);
+        form.addView(verified);
+        form.addView(priv);
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("Create local account")
+                .setView(form)
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Create", null)
+                .create();
+        dialog.setOnShowListener(v -> dialog.getButton(DialogInterface.BUTTON_POSITIVE).setOnClickListener(x -> {
+            String n = name.getText().toString().trim();
+            String h = handle.getText().toString().trim();
+            if (n.isEmpty() || h.isEmpty()) {
+                Toast.makeText(this, "Name and handle are required", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            try {
+                int[] colors = {0xff7856a8, 0xffd05a7a, 0xff2f7d6f, 0xff536471, 0xffc28b32, 0xff1d9bf0, 0xffa45b35};
+                int color = colors[(int) (System.currentTimeMillis() % colors.length)];
+                long id = db.createAccount(n, h, bio.getText().toString(), color, verified.isChecked(), priv.isChecked());
+                clearAccountCache();
+                currentAccountId = id;
+                prefs.edit().putLong("current_account", id).apply();
+                dialog.dismiss();
+                renderProfile(id);
+            } catch (SQLiteConstraintException ex) {
+                Toast.makeText(this, "That handle already exists locally", Toast.LENGTH_SHORT).show();
+            }
+        }));
+        dialog.show();
+    }
+
+    private void showEditAccount(long id) {
+        Account a = db.getAccount(id);
+        if (a == null) return;
+        LinearLayout form = dialogForm();
+        EditText name = field("Name", false); name.setText(a.name);
+        EditText handle = field("Handle", false); handle.setText(a.handle);
+        EditText bio = field("Bio", true); bio.setText(a.bio);
+        EditText followers = field("Displayed followers (-1 = real)", false);
+        followers.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_SIGNED);
+        followers.setText(String.valueOf(a.displayFollowers));
+        EditText following = field("Displayed following (-1 = real)", false);
+        following.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_SIGNED);
+        following.setText(String.valueOf(a.displayFollowing));
+        CheckBox verified = checkbox("Verified badge"); verified.setChecked(a.verified);
+        CheckBox priv = checkbox("Private account"); priv.setChecked(a.isPrivate);
+        TextView avatar = pill("Choose avatar", false);
+        TextView banner = pill("Choose header", false);
+        LinearLayout images = hbox();
+        LinearLayout.LayoutParams imp = new LinearLayout.LayoutParams(0, dp(40), 1f);
+        imp.setMargins(dp(3), dp(8), dp(3), dp(8));
+        avatar.setLayoutParams(imp);
+        banner.setLayoutParams(new LinearLayout.LayoutParams(0, dp(40), 1f));
+        images.addView(avatar);
+        images.addView(banner);
+
+        form.addView(name);
+        form.addView(handle);
+        form.addView(bio);
+        form.addView(followers);
+        form.addView(following);
+        form.addView(verified);
+        form.addView(priv);
+        form.addView(images);
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("Director · account")
+                .setView(form)
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Save", null)
+                .create();
+
+        Runnable save = () -> {
+            a.name = name.getText().toString().trim();
+            a.handle = handle.getText().toString().trim();
+            a.bio = bio.getText().toString();
+            a.verified = verified.isChecked();
+            a.isPrivate = priv.isChecked();
+            try { a.displayFollowers = Long.parseLong(followers.getText().toString().trim()); } catch (Exception e) { a.displayFollowers = -1; }
+            try { a.displayFollowing = Long.parseLong(following.getText().toString().trim()); } catch (Exception e) { a.displayFollowing = -1; }
+            try {
+                db.updateAccount(a);
+                clearAccountCache();
+            } catch (SQLiteConstraintException e) {
+                Toast.makeText(this, "That handle already exists", Toast.LENGTH_SHORT).show();
+            }
+        };
+
+        dialog.setOnShowListener(v -> {
+            dialog.getButton(DialogInterface.BUTTON_POSITIVE).setOnClickListener(x -> {
+                save.run();
+                dialog.dismiss();
+                refreshCurrent();
+            });
+            avatar.setOnClickListener(x -> {
+                save.run();
+                pendingImageAccountId = id;
+                dialog.dismiss();
+                pickImage(PICK_AVATAR);
+            });
+            banner.setOnClickListener(x -> {
+                save.run();
+                pendingImageAccountId = id;
+                dialog.dismiss();
+                pickImage(PICK_BANNER);
+            });
+        });
+        dialog.show();
+    }
+
+    private LinearLayout dialogForm() {
+        LinearLayout form = vbox();
+        form.setPadding(dp(18), dp(6), dp(18), dp(8));
+        return form;
+    }
+
+    private EditText field(String hint, boolean multiline) {
+        EditText e = new EditText(this);
+        e.setHint(hint);
+        e.setHintTextColor(pal.secondary);
+        e.setTextColor(pal.fg);
+        e.setTextSize(15);
+        e.setBackgroundTintList(android.content.res.ColorStateList.valueOf(XUi.BLUE));
+        e.setSingleLine(!multiline);
+        if (multiline) {
+            e.setMinLines(2);
+            e.setMaxLines(5);
+        }
+        return e;
+    }
+
+    private CheckBox checkbox(String text) {
+        CheckBox c = new CheckBox(this);
+        c.setText(text);
+        c.setTextColor(pal.fg);
+        c.setButtonTintList(android.content.res.ColorStateList.valueOf(XUi.BLUE));
+        return c;
+    }
+
+    private void showDirectorMenu(long postId) {
+        String[] options = {"Edit everything", "Make viral", "Duplicate / post as…", "Copy link", "Delete"};
+        new AlertDialog.Builder(this)
+                .setTitle("Director Mode")
+                .setItems(options, (d, which) -> {
+                    if (which == 0) showDirectorEdit(postId);
+                    else if (which == 1) {
+                        Post p = db.getPost(postId);
+                        if (p != null) {
+                            p.views = Math.max(p.views, 2_400_000);
+                            p.likes = Math.max(p.likes, 184_000);
+                            p.reposts = Math.max(p.reposts, 27_000);
+                            p.replies = Math.max(p.replies, 6_800);
+                            p.bookmarks = Math.max(p.bookmarks, 31_000);
+                            p.viralBoost = Math.max(p.viralBoost, 400_000);
+                            db.updatePostDirector(p);
+                            refreshCurrent();
+                        }
+                    } else if (which == 2) duplicatePost(postId);
+                    else if (which == 3) showShareMenu(postId);
+                    else if (which == 4) confirmDeletePost(postId);
+                })
+                .show();
+    }
+
+    private void showDirectorEdit(long postId) {
+        Post p = db.getPost(postId);
+        if (p == null) return;
+        LinearLayout form = dialogForm();
+        EditText body = field("Post text", true); body.setText(p.body);
+        EditText views = numberField("Views", p.views);
+        EditText likes = numberField("Likes", p.likes);
+        EditText reposts = numberField("Reposts", p.reposts);
+        EditText replies = numberField("Replies", p.replies);
+        EditText bookmarks = numberField("Bookmarks", p.bookmarks);
+        EditText mins = numberField("Minutes ago", Math.max(0, (System.currentTimeMillis() - p.createdAt) / 60000L));
+        EditText boost = numberField("Recommendation boost", (long)p.viralBoost);
+        TextView author = pill("Author: @" + account(p.authorId).handle, false);
+
+        form.addView(body);
+        form.addView(views);
+        form.addView(likes);
+        form.addView(reposts);
+        form.addView(replies);
+        form.addView(bookmarks);
+        form.addView(mins);
+        form.addView(boost);
+        form.addView(author);
+
+        final long[] chosenAuthor = {p.authorId};
+        author.setOnClickListener(v -> chooseDirectorAuthor(chosenAuthor, author));
+
+        new AlertDialog.Builder(this)
+                .setTitle("Edit local post")
+                .setView(form)
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Save", (d, w) -> {
+                    p.body = body.getText().toString();
+                    p.authorId = chosenAuthor[0];
+                    p.views = parseLong(views, p.views);
+                    p.likes = parseLong(likes, p.likes);
+                    p.reposts = parseLong(reposts, p.reposts);
+                    p.replies = parseLong(replies, p.replies);
+                    p.bookmarks = parseLong(bookmarks, p.bookmarks);
+                    long minutes = Math.max(0, parseLong(mins, 0));
+                    p.createdAt = System.currentTimeMillis() - minutes * 60000L;
+                    p.viralBoost = parseLong(boost, (long)p.viralBoost);
+                    db.updatePostDirector(p);
+                    refreshCurrent();
+                })
+                .show();
+    }
+
+    private EditText numberField(String hint, long value) {
+        EditText e = field(hint, false);
+        e.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_SIGNED);
+        e.setHint(hint);
+        e.setText(String.valueOf(value));
+        return e;
+    }
+
+    private long parseLong(EditText e, long fallback) {
+        try { return Long.parseLong(e.getText().toString().trim()); }
+        catch (Exception ex) { return fallback; }
+    }
+
+    private void chooseDirectorAuthor(final long[] chosen, TextView button) {
+        List<Account> accounts = db.listAccounts();
+        String[] names = new String[accounts.size()];
+        for (int i = 0; i < accounts.size(); i++) names[i] = accounts.get(i).name + "  @" + accounts.get(i).handle;
+        new AlertDialog.Builder(this)
+                .setTitle("Choose author")
+                .setItems(names, (d, which) -> {
+                    chosen[0] = accounts.get(which).id;
+                    button.setText("Author: @" + accounts.get(which).handle);
+                })
+                .show();
+    }
+
+    private void duplicatePost(long postId) {
+        Post p = db.getPost(postId);
+        if (p == null) return;
+        composeDraft = p.body;
+        composeMediaPath = p.mediaPath;
+        composeAuthorId = currentAccountId;
+        showComposer(null, p.quoteOf);
+    }
+
+    private void showPostMenu(long postId) {
+        Post post = db.getPost(postId);
+        boolean hasMedia = post != null && post.mediaPath != null && new File(post.mediaPath).exists();
+        String[] options = hasMedia
+                ? new String[]{"Copy link", "Quote", "Bookmark", "Save media", "Director Mode"}
+                : new String[]{"Copy link", "Quote", "Bookmark", "Director Mode"};
+        new AlertDialog.Builder(this)
+                .setItems(options, (d, which) -> {
+                    if (which == 0) showShareMenu(postId);
+                    else if (which == 1) {
+                        composeDraft = "";
+                        composeMediaPath = null;
+                        composeAuthorId = currentAccountId;
+                        showComposer(null, postId);
+                    } else if (which == 2) {
+                        db.toggleInteraction(currentAccountId, postId, "bookmark");
+                        refreshCurrent();
+                    } else if (hasMedia && which == 3) {
+                        savePostMedia(post.mediaPath);
+                    } else {
+                        showDirectorMenu(postId);
+                    }
+                })
+                .show();
+    }
+
+    private void savePostMedia(String path) {
+        if (path == null || !new File(path).exists()) {
+            Toast.makeText(this, "That media file is missing", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        pendingSaveMediaPath = path;
+        String ext = ".jpg";
+        int dot = path.lastIndexOf('.');
+        if (dot >= 0 && dot < path.length() - 1) {
+            String candidate = path.substring(dot).toLowerCase(Locale.US);
+            if (candidate.matches("\\.(jpg|jpeg|png|webp|gif)")) ext = candidate;
+        }
+        Intent i = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        i.addCategory(Intent.CATEGORY_OPENABLE);
+        i.setType("image/*");
+        i.putExtra(Intent.EXTRA_TITLE, "x-local-media-" + System.currentTimeMillis() + ext);
+        startActivityForResult(i, SAVE_POST_MEDIA);
+    }
+
+    private void showShareMenu(long postId) {
+        Post p = db.getPost(postId);
+        if (p == null) return;
+        Account a = account(p.authorId);
+        if (a == null) return;
+        String normal = "https://x.com/" + a.handle + "/status/" + p.id;
+        String discord = "https://fxtwitter.com/" + a.handle + "/status/" + p.id;
+        String[] options = {"Copy Link → Normal", "Copy Link → Discord (fxtwitter)"};
+        new AlertDialog.Builder(this)
+                .setTitle("Copy link")
+                .setItems(options, (d, which) -> {
+                    String value = which == 0 ? normal : discord;
+                    ClipboardManager cb = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                    cb.setPrimaryClip(ClipData.newPlainText("post link", value));
+                    Toast.makeText(this, "Copied", Toast.LENGTH_SHORT).show();
+                })
+                .show();
+    }
+
+    private void confirmDeletePost(long postId) {
+        new AlertDialog.Builder(this)
+                .setTitle("Delete this local post?")
+                .setMessage("It only exists in this simulator.")
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Delete", (d, w) -> {
+                    db.deletePost(postId);
+                    if (currentScreen == SCREEN_POST && currentPostId == postId) renderHome();
+                    else refreshCurrent();
+                })
+                .show();
+    }
+
+    private void showAppearance() {
+        String[] items = {"Lights out", "Dim", "Light"};
+        new AlertDialog.Builder(this)
+                .setTitle("Appearance")
+                .setSingleChoiceItems(items, themeMode, (d, which) -> {
+                    themeMode = which;
+                    prefs.edit().putInt("theme_mode", themeMode).apply();
+                    pal = new XUi.Palette(themeMode);
+                    applySystemBars();
+                    d.dismiss();
+                    refreshCurrent();
+                })
+                .show();
+    }
+
+    private void confirmReset() {
+        new AlertDialog.Builder(this)
+                .setTitle("Reset the universe?")
+                .setMessage("All local accounts, posts, follows, messages and interactions will be replaced by the demo universe.")
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Reset", (d, w) -> {
+                    db.resetEverything();
+                    clearAccountCache();
+                    currentAccountId = -1;
+                    ensureCurrentAccount();
+                    renderHome();
+                })
+                .show();
+    }
+
+    private void pickImage(int request) {
+        Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        i.addCategory(Intent.CATEGORY_OPENABLE);
+        i.setType("image/*");
+        startActivityForResult(i, request);
+    }
+
+    private void exportUniversePicker() {
+        Intent i = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        i.addCategory(Intent.CATEGORY_OPENABLE);
+        i.setType("application/octet-stream");
+        i.putExtra(Intent.EXTRA_TITLE, "x-local-universe.xuniverse");
+        startActivityForResult(i, EXPORT_UNIVERSE);
+    }
+
+    private void importUniversePicker() {
+        Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        i.addCategory(Intent.CATEGORY_OPENABLE);
+        i.setType("*/*");
+        startActivityForResult(i, IMPORT_UNIVERSE);
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (resultCode != RESULT_OK || data == null || data.getData() == null) {
+            if (requestCode == PICK_POST_MEDIA) showComposer(composeReplyTo, composeQuoteOf);
+            return;
+        }
+        Uri uri = data.getData();
+        try {
+            if (requestCode == PICK_AVATAR || requestCode == PICK_BANNER || requestCode == PICK_POST_MEDIA) {
+                String path = copyImageToInternal(uri);
+                if (requestCode == PICK_POST_MEDIA) {
+                    composeMediaPath = path;
+                    showComposer(composeReplyTo, composeQuoteOf);
+                } else if (pendingImageAccountId > 0) {
+                    db.setAccountImage(pendingImageAccountId, requestCode == PICK_AVATAR ? "avatar_path" : "banner_path", path);
+                    clearAccountCache();
+                    long id = pendingImageAccountId;
+                    pendingImageAccountId = -1;
+                    renderProfile(id);
+                }
+            } else if (requestCode == SAVE_POST_MEDIA && pendingSaveMediaPath != null) {
+                try (InputStream in = new BufferedInputStream(new FileInputStream(pendingSaveMediaPath));
+                     OutputStream out = new BufferedOutputStream(getContentResolver().openOutputStream(uri))) {
+                    byte[] buf = new byte[64 * 1024];
+                    int n;
+                    while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+                }
+                pendingSaveMediaPath = null;
+                Toast.makeText(this, "Media saved", Toast.LENGTH_SHORT).show();
+            } else if (requestCode == EXPORT_UNIVERSE) {
+                exportUniverse(uri);
+            } else if (requestCode == IMPORT_UNIVERSE) {
+                importUniverse(uri);
+            }
+        } catch (Exception e) {
+            Toast.makeText(this, "Couldn't complete that: " + e.getMessage(), Toast.LENGTH_LONG).show();
+            if (requestCode == PICK_POST_MEDIA) showComposer(composeReplyTo, composeQuoteOf);
+        }
+    }
+
+    private String copyImageToInternal(Uri uri) throws Exception {
+        File dir = new File(getFilesDir(), "media");
+        if (!dir.exists()) dir.mkdirs();
+        File out = new File(dir, UUID.randomUUID().toString() + ".img");
+        try (InputStream in = getContentResolver().openInputStream(uri);
+             OutputStream os = new BufferedOutputStream(new FileOutputStream(out))) {
+            if (in == null) throw new Exception("Cannot open image");
+            byte[] buf = new byte[64 * 1024];
+            int n;
+            while ((n = in.read(buf)) > 0) os.write(buf, 0, n);
+        }
+        return out.getAbsolutePath();
+    }
+
+    private void exportUniverse(Uri uri) throws Exception {
+        db.close();
+        File dbFile = getDatabasePath(LocalDb.DB_NAME);
+        try (OutputStream raw = getContentResolver().openOutputStream(uri);
+             ZipOutputStream zip = new ZipOutputStream(new BufferedOutputStream(raw))) {
+            addFileToZip(zip, dbFile, "xlocal.db");
+            File media = new File(getFilesDir(), "media");
+            if (media.exists() && media.isDirectory()) {
+                File[] files = media.listFiles();
+                if (files != null) {
+                    for (File f : files) if (f.isFile()) addFileToZip(zip, f, "media/" + f.getName());
+                }
+            }
+        } finally {
+            db = new LocalDb(this);
+        }
+        Toast.makeText(this, "Universe exported", Toast.LENGTH_SHORT).show();
+    }
+
+    private void addFileToZip(ZipOutputStream zip, File file, String name) throws Exception {
+        if (!file.exists()) return;
+        zip.putNextEntry(new ZipEntry(name));
+        try (InputStream in = new BufferedInputStream(new FileInputStream(file))) {
+            byte[] buf = new byte[64 * 1024];
+            int n;
+            while ((n = in.read(buf)) > 0) zip.write(buf, 0, n);
+        }
+        zip.closeEntry();
+    }
+
+    private void importUniverse(Uri uri) throws Exception {
+        db.close();
+        File database = getDatabasePath(LocalDb.DB_NAME);
+        File media = new File(getFilesDir(), "media");
+        File tempDb = new File(getCacheDir(), "imported-xlocal.db");
+        if (tempDb.exists()) tempDb.delete();
+
+        if (!media.exists()) media.mkdirs();
+        File[] old = media.listFiles();
+        if (old != null) for (File f : old) f.delete();
+
+        boolean foundDb = false;
+        try (InputStream raw = getContentResolver().openInputStream(uri);
+             ZipInputStream zip = new ZipInputStream(new BufferedInputStream(raw))) {
+            ZipEntry entry;
+            byte[] buf = new byte[64 * 1024];
+            while ((entry = zip.getNextEntry()) != null) {
+                String name = entry.getName();
+                if ("xlocal.db".equals(name)) {
+                    try (OutputStream out = new BufferedOutputStream(new FileOutputStream(tempDb))) {
+                        int n;
+                        while ((n = zip.read(buf)) > 0) out.write(buf, 0, n);
+                    }
+                    foundDb = true;
+                } else if (name.startsWith("media/") && !name.contains("..")) {
+                    String base = new File(name).getName();
+                    File target = new File(media, base);
+                    try (OutputStream out = new BufferedOutputStream(new FileOutputStream(target))) {
+                        int n;
+                        while ((n = zip.read(buf)) > 0) out.write(buf, 0, n);
+                    }
+                }
+                zip.closeEntry();
+            }
+        }
+        if (!foundDb) throw new Exception("Not a valid .xuniverse file");
+        File parent = database.getParentFile();
+        if (parent != null && !parent.exists()) parent.mkdirs();
+        copyFile(tempDb, database);
+        new File(database.getAbsolutePath() + "-wal").delete();
+        new File(database.getAbsolutePath() + "-shm").delete();
+        db = new LocalDb(this);
+        clearAccountCache();
+        currentAccountId = -1;
+        ensureCurrentAccount();
+        Toast.makeText(this, "Universe imported", Toast.LENGTH_SHORT).show();
+        renderHome();
+    }
+
+    private void copyFile(File from, File to) throws Exception {
+        try (InputStream in = new BufferedInputStream(new FileInputStream(from));
+             OutputStream out = new BufferedOutputStream(new FileOutputStream(to))) {
+            byte[] buf = new byte[64 * 1024];
+            int n;
+            while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+        }
+    }
+
+    private Bitmap decodeScaled(String path, int maxW, int maxH) {
+        BitmapFactory.Options o = new BitmapFactory.Options();
+        o.inJustDecodeBounds = true;
+        BitmapFactory.decodeFile(path, o);
+        int sample = 1;
+        while (o.outWidth / sample > maxW * 2 || o.outHeight / sample > maxH * 2) sample *= 2;
+        BitmapFactory.Options real = new BitmapFactory.Options();
+        real.inSampleSize = Math.max(1, sample);
+        return BitmapFactory.decodeFile(path, real);
+    }
+
+    private void goBackFromSubscreen() {
+        if (currentScreen == SCREEN_CHAT) renderMessages();
+        else if (currentScreen == SCREEN_POST) renderHome();
+        else if (currentScreen == SCREEN_PROFILE || currentScreen == SCREEN_BOOKMARKS) renderHome();
+        else renderHome();
+    }
+
+    private void refreshCurrent() {
+        clearAccountCache();
+        if (currentScreen == SCREEN_HOME) renderHome();
+        else if (currentScreen == SCREEN_SEARCH) renderSearch();
+        else if (currentScreen == SCREEN_NOTIFICATIONS) renderNotifications();
+        else if (currentScreen == SCREEN_MESSAGES) renderMessages();
+        else if (currentScreen == SCREEN_PROFILE && currentProfileId > 0) renderProfile(currentProfileId);
+        else if (currentScreen == SCREEN_POST && currentPostId > 0) renderPost(currentPostId);
+        else if (currentScreen == SCREEN_BOOKMARKS) renderBookmarks();
+        else if (currentScreen == SCREEN_CHAT && currentChatId > 0) renderChat(currentChatId);
+        else renderHome();
+    }
+
+    private String formatCount(long n) {
+        if (n < 1000) return String.valueOf(n);
+        if (n < 1_000_000) {
+            double v = n / 1000.0;
+            return trimOne(v) + "K";
+        }
+        if (n < 1_000_000_000) {
+            double v = n / 1_000_000.0;
+            return trimOne(v) + "M";
+        }
+        return trimOne(n / 1_000_000_000.0) + "B";
+    }
+
+    private String trimOne(double v) {
+        if (v >= 100 || Math.abs(v - Math.rint(v)) < 0.05) return String.format(Locale.US, "%.0f", v);
+        return String.format(Locale.US, "%.1f", v);
+    }
+
+    private String timeAgo(long when) {
+        long sec = Math.max(0, (System.currentTimeMillis() - when) / 1000);
+        if (sec < 60) return sec + "s";
+        long min = sec / 60;
+        if (min < 60) return min + "m";
+        long h = min / 60;
+        if (h < 24) return h + "h";
+        long d = h / 24;
+        if (d < 7) return d + "d";
+        return new SimpleDateFormat("MMM d", Locale.US).format(new Date(when));
+    }
+}
