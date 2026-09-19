@@ -40,6 +40,9 @@ final class Post {
     boolean profileRepost;
     long profileActorId;
     long profileEventAt;
+    String location;
+    String[] pollOptions;
+    int[] pollCounts;
 }
 
 final class LocalNotification {
