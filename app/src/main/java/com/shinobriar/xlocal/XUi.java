@@ -150,7 +150,8 @@ final class XUi {
                 PHOTO=13, CLOSE=14, CHECK=15, PLUS=16, XLOGO=17, COMPOSE=18,
                 VERIFIED=19, PROFILE=20, GLOBE=21, CAMERA=22, GIF=23, POLL=24,
                 LOCATION=25, SCHEDULE=26, PLUS_CIRCLE=27, CALENDAR=28, LINK=29,
-                DRAFTS=30, SETTINGS=31, BALLOON=32;
+                DRAFTS=30, SETTINGS=31, BALLOON=32, CROP=33, DRAW=34, FILTER=35,
+                PLAY=36, PAUSE=37, SOUND=38, SOUND_OFF=39, MEDIA_EXPAND=40;
 
         private final int type;
         private int color;
@@ -202,6 +203,14 @@ final class XUi {
                 case DRAFTS: return R.drawable.ic_vector_drafts;
                 case SETTINGS: return R.drawable.ic_vector_settings_stroke;
                 case BALLOON: return R.drawable.ic_vector_balloon_stroke;
+                case CROP: return R.drawable.ic_vector_photo_crop;
+                case DRAW: return R.drawable.ic_vector_draw;
+                case FILTER: return R.drawable.ic_vector_filter;
+                case PLAY: return R.drawable.ic_vector_play;
+                case PAUSE: return R.drawable.ic_vector_pause;
+                case SOUND: return R.drawable.ic_vector_sound;
+                case SOUND_OFF: return R.drawable.ic_vector_sound_off;
+                case MEDIA_EXPAND: return R.drawable.ic_vector_media_expand;
                 default: return R.drawable.ic_vector_x;
             }
         }
