@@ -71,5 +71,8 @@ final class DraftPost {
     String mediaPath;
     Long replyTo;
     Long quoteOf;
+    String location;
+    String[] pollOptions;
+    long scheduledAt;
     long createdAt;
 }
