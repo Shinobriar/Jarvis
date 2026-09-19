@@ -3229,6 +3229,235 @@ public class MainActivity extends Activity {
                 .show();
     }
 
+    private void showPostImageEditor(Bitmap bitmap, String previousPath, Long replyTo, Long quoteOf) {
+        if (bitmap == null) {
+            composeMediaPath = previousPath;
+            showComposer(replyTo, quoteOf);
+            return;
+        }
+
+        Dialog d = new Dialog(this);
+        d.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        d.setCancelable(false);
+
+        LinearLayout root = vbox();
+        root.setBackgroundColor(Color.BLACK);
+
+        LinearLayout toolbar = hbox();
+        toolbar.setGravity(Gravity.CENTER_VERTICAL);
+        toolbar.setPadding(dp(12), dp(10), dp(12), dp(10));
+        toolbar.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(76)));
+
+        XUi.IconView back = editorIcon(XUi.IconView.BACK);
+        toolbar.addView(back);
+
+        XUi.IconView crop = editorIcon(XUi.IconView.CROP);
+        toolbar.addView(crop);
+
+        TextView textTool = tv("Aa", 19, Color.WHITE, true);
+        textTool.setGravity(Gravity.CENTER);
+        textTool.setBackground(XUi.rounded(0xff202124, 999, this));
+        LinearLayout.LayoutParams textLp = new LinearLayout.LayoutParams(dp(54), dp(54));
+        textLp.setMargins(dp(7), 0, dp(7), 0);
+        textTool.setLayoutParams(textLp);
+        toolbar.addView(textTool);
+
+        XUi.IconView draw = editorIcon(XUi.IconView.DRAW);
+        toolbar.addView(draw);
+
+        XUi.IconView filter = editorIcon(XUi.IconView.FILTER);
+        toolbar.addView(filter);
+
+        XUi.IconView more = editorIcon(XUi.IconView.MORE);
+        toolbar.addView(more);
+        root.addView(toolbar);
+
+        PostImageEditorView editor = new PostImageEditorView(this);
+        editor.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        editor.setBitmap(bitmap);
+        root.addView(editor);
+
+        LinearLayout bottom = hbox();
+        bottom.setGravity(Gravity.CENTER);
+        bottom.setPadding(dp(16), dp(10), dp(16), dp(16));
+        TextView hint = tv("Crop · text · draw · filters", 13, 0xff9ca3af, false);
+        hint.setLayoutParams(new LinearLayout.LayoutParams(0, dp(42), 1f));
+        hint.setGravity(Gravity.CENTER_VERTICAL);
+        bottom.addView(hint);
+        TextView done = pill("Done", true);
+        done.setLayoutParams(new LinearLayout.LayoutParams(dp(94), dp(42)));
+        bottom.addView(done);
+        root.addView(bottom);
+
+        back.setOnClickListener(v -> {
+            composeMediaPath = previousPath;
+            d.dismiss();
+            showComposer(replyTo, quoteOf);
+        });
+
+        crop.setOnClickListener(v -> {
+            String[] choices = {"Original ratio", "Square", "Wide 16:9"};
+            new AlertDialog.Builder(this)
+                    .setTitle("Crop")
+                    .setItems(choices, (dialog, which) -> {
+                        Bitmap current = editor.getWorkingCopy();
+                        if (current == null) return;
+                        float aspect;
+                        if (which == 1) aspect = 1f;
+                        else if (which == 2) aspect = 16f / 9f;
+                        else aspect = current.getWidth() / (float)Math.max(1, current.getHeight());
+                        showPostCropEditor(editor, current, aspect);
+                    })
+                    .show();
+        });
+
+        textTool.setOnClickListener(v -> {
+            EditText input = field("Text", false);
+            new AlertDialog.Builder(this)
+                    .setTitle("Add text")
+                    .setView(input)
+                    .setNegativeButton("Cancel", null)
+                    .setPositiveButton("Add", (dialog, which) -> editor.addText(input.getText().toString()))
+                    .show();
+        });
+
+        draw.setOnClickListener(v -> {
+            if (editor.isDrawMode()) {
+                editor.setDrawMode(false);
+                Toast.makeText(this, "Drawing off", Toast.LENGTH_SHORT).show();
+            } else {
+                String[] colors = {"White", "Red", "Blue", "Black"};
+                int[] values = {Color.WHITE, 0xffff3b30, XUi.BLUE, Color.BLACK};
+                new AlertDialog.Builder(this)
+                        .setTitle("Draw")
+                        .setItems(colors, (dialog, which) -> {
+                            editor.setBrushColor(values[which]);
+                            editor.setDrawMode(true);
+                            Toast.makeText(this, "Draw directly on the image", Toast.LENGTH_SHORT).show();
+                        }).show();
+            }
+        });
+
+        filter.setOnClickListener(v -> {
+            String name = editor.cycleFilter();
+            Toast.makeText(this, name, Toast.LENGTH_SHORT).show();
+        });
+
+        more.setOnClickListener(v -> {
+            String[] actions = {"Rotate 90°", "Undo", "Reset image"};
+            new AlertDialog.Builder(this)
+                    .setItems(actions, (dialog, which) -> {
+                        if (which == 0) editor.rotate90();
+                        else if (which == 1) {
+                            if (!editor.undo()) Toast.makeText(this, "Nothing to undo", Toast.LENGTH_SHORT).show();
+                        } else {
+                            editor.reset();
+                        }
+                    }).show();
+        });
+
+        done.setOnClickListener(v -> {
+            try {
+                Bitmap out = editor.renderFinal();
+                if (out == null) throw new Exception("Couldn't render edited image");
+                composeMediaPath = saveBitmapToInternal(out);
+                out.recycle();
+                d.dismiss();
+                showComposer(replyTo, quoteOf);
+            } catch (Exception e) {
+                Toast.makeText(this, "Couldn't save edit: " + e.getMessage(), Toast.LENGTH_LONG).show();
+            }
+        });
+
+        d.setOnKeyListener((dialog, keyCode, event) -> {
+            if (keyCode == KeyEvent.KEYCODE_BACK && event.getAction() == KeyEvent.ACTION_UP) {
+                composeMediaPath = previousPath;
+                d.dismiss();
+                showComposer(replyTo, quoteOf);
+                return true;
+            }
+            return false;
+        });
+
+        d.setContentView(root);
+        d.show();
+        Window w = d.getWindow();
+        if (w != null) {
+            w.setBackgroundDrawable(new ColorDrawable(Color.BLACK));
+            w.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT);
+        }
+    }
+
+    private XUi.IconView editorIcon(int type) {
+        XUi.IconView icon = new XUi.IconView(this, type, Color.WHITE);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(54), dp(54));
+        lp.setMargins(dp(7), 0, dp(7), 0);
+        icon.setLayoutParams(lp);
+        icon.setPadding(dp(14), dp(14), dp(14), dp(14));
+        icon.setBackground(XUi.rounded(0xff202124, 999, this));
+        return icon;
+    }
+
+    private void showPostCropEditor(PostImageEditorView target, Bitmap source, float aspect) {
+        Dialog d = new Dialog(this);
+        d.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        d.setCancelable(false);
+
+        LinearLayout root = vbox();
+        root.setBackgroundColor(Color.BLACK);
+
+        LinearLayout top = hbox();
+        top.setGravity(Gravity.CENTER_VERTICAL);
+        top.setPadding(dp(10), dp(8), dp(10), dp(8));
+        XUi.IconView back = new XUi.IconView(this, XUi.IconView.BACK, Color.WHITE);
+        back.setLayoutParams(new LinearLayout.LayoutParams(dp(46), dp(46)));
+        back.setPadding(dp(11), dp(11), dp(11), dp(11));
+        top.addView(back);
+        TextView title = tv("Crop", 18, Color.WHITE, true);
+        title.setLayoutParams(new LinearLayout.LayoutParams(0, dp(46), 1f));
+        title.setGravity(Gravity.CENTER_VERTICAL);
+        top.addView(title);
+        TextView use = pill("Apply", true);
+        use.setLayoutParams(new LinearLayout.LayoutParams(dp(92), dp(40)));
+        top.addView(use);
+        root.addView(top);
+
+        CropImageView crop = new CropImageView(this);
+        crop.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        root.addView(crop);
+        crop.post(() -> crop.setBitmap(source, aspect));
+
+        TextView hint = tv("Drag to reposition · pinch to zoom · double-tap to reset", 13, 0xff9ca3af, false);
+        hint.setGravity(Gravity.CENTER);
+        hint.setPadding(dp(10), dp(12), dp(10), dp(18));
+        root.addView(hint);
+
+        back.setOnClickListener(v -> d.dismiss());
+        use.setOnClickListener(v -> {
+            Bitmap out = crop.renderCrop(
+                    Math.min(2048, Math.max(512, source.getWidth())),
+                    Math.min(2048, Math.max(512, Math.round(Math.min(2048, Math.max(512, source.getWidth())) / aspect))));
+            if (out != null) target.replaceWorking(out, true);
+            d.dismiss();
+        });
+
+        d.setOnKeyListener((dialog, keyCode, event) -> {
+            if (keyCode == KeyEvent.KEYCODE_BACK && event.getAction() == KeyEvent.ACTION_UP) {
+                d.dismiss();
+                return true;
+            }
+            return false;
+        });
+
+        d.setContentView(root);
+        d.show();
+        Window w = d.getWindow();
+        if (w != null) {
+            w.setBackgroundDrawable(new ColorDrawable(Color.BLACK));
+            w.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT);
+        }
+    }
+
     private void chooseAccountImage(long accountId, boolean avatar, String currentPath) {
         pendingImageAccountId = accountId;
         int request = avatar ? PICK_AVATAR : PICK_BANNER;
