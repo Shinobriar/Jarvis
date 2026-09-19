@@ -1209,6 +1209,433 @@ public class MainActivity extends Activity {
         setScreen(frame);
     }
 
+    private void renderMedia(long postId) {
+        Post p = db.getPost(postId);
+        if (p == null || p.mediaPath == null || !new File(p.mediaPath).exists()
+                || !db.canSeeAccount(currentAccountId, p.authorId)) {
+            Toast.makeText(this, "This media isn't available", Toast.LENGTH_SHORT).show();
+            onBackPressed();
+            return;
+        }
+
+        stopActiveVideo();
+        rememberBeforeNavigation(SCREEN_MEDIA, postId);
+        currentScreen = SCREEN_MEDIA;
+        currentMediaPostId = postId;
+
+        db.addView(currentAccountId, postId);
+        if (isVideoPath(p.mediaPath)) renderVideoMedia(p);
+        else renderImageMedia(p);
+    }
+
+    private void renderImageMedia(Post p) {
+        Account author = account(p.authorId);
+        if (author == null) return;
+
+        LinearLayout root = vbox();
+        root.setBackgroundColor(Color.BLACK);
+        root.setLayoutParams(new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+        root.addView(mediaTopControls(p));
+
+        View authorRow = mediaAuthorRow(author, false);
+        root.addView(authorRow);
+
+        FrameLayout imageArea = new FrameLayout(this);
+        imageArea.setBackgroundColor(Color.BLACK);
+        imageArea.setLayoutParams(new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+
+        ImageView image = new ImageView(this);
+        image.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        setMediaImage(image, p.mediaPath, 2200, 2200);
+        image.setLayoutParams(new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        imageArea.addView(image);
+        root.addView(imageArea);
+
+        root.addView(mediaActionRow(p, false));
+        root.addView(XUi.divider(this, 0xff202327));
+        root.addView(mediaReplyBar(p));
+        setScreen(root);
+    }
+
+    private void renderVideoMedia(Post p) {
+        Account author = account(p.authorId);
+        if (author == null) return;
+
+        final int generation = ++mediaRenderGeneration;
+        FrameLayout root = new FrameLayout(this);
+        root.setBackgroundColor(Color.BLACK);
+        root.setLayoutParams(new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+        VideoView video = new VideoView(this);
+        video.setBackgroundColor(Color.BLACK);
+        video.setLayoutParams(new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        root.addView(video);
+        activeVideoView = video;
+
+        LinearLayout top = mediaTopControls(p);
+        FrameLayout.LayoutParams topParams = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(76), Gravity.TOP);
+        top.setLayoutParams(topParams);
+        top.setPadding(dp(18), dp(10), dp(18), dp(8));
+        root.addView(top);
+
+        LinearLayout bottom = vbox();
+        bottom.setPadding(dp(16), dp(8), dp(16), dp(18));
+        bottom.setBackground(new ColorDrawable(0x22000000));
+        FrameLayout.LayoutParams bottomParams = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM);
+        bottom.setLayoutParams(bottomParams);
+
+        bottom.addView(mediaAuthorRow(author, true));
+        bottom.addView(mediaActionRow(p, true));
+
+        SeekBar seek = new SeekBar(this);
+        seek.setMax(1000);
+        LinearLayout.LayoutParams seekParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(38));
+        seekParams.setMargins(0, dp(5), 0, dp(2));
+        seek.setLayoutParams(seekParams);
+        bottom.addView(seek);
+
+        LinearLayout controls = hbox();
+        controls.setGravity(Gravity.CENTER_VERTICAL);
+        controls.setPadding(dp(4), dp(3), dp(4), 0);
+
+        FrameLayout playSlot = new FrameLayout(this);
+        playSlot.setLayoutParams(new LinearLayout.LayoutParams(dp(56), dp(48)));
+        XUi.IconView play = new XUi.IconView(this, XUi.IconView.PLAY, Color.WHITE);
+        XUi.IconView pause = new XUi.IconView(this, XUi.IconView.PAUSE, Color.WHITE);
+        FrameLayout.LayoutParams controlIcon = new FrameLayout.LayoutParams(dp(28), dp(28), Gravity.CENTER);
+        play.setLayoutParams(controlIcon);
+        pause.setLayoutParams(new FrameLayout.LayoutParams(dp(28), dp(28), Gravity.CENTER));
+        playSlot.addView(play);
+        playSlot.addView(pause);
+        play.setVisibility(View.GONE);
+        controls.addView(playSlot);
+
+        TextView remaining = tv("--:--", 15, Color.WHITE, true);
+        remaining.setGravity(Gravity.CENTER);
+        remaining.setLayoutParams(new LinearLayout.LayoutParams(dp(82), dp(48)));
+        controls.addView(remaining);
+
+        TextView speed = tv("1x", 16, Color.WHITE, true);
+        speed.setGravity(Gravity.CENTER);
+        speed.setLayoutParams(new LinearLayout.LayoutParams(dp(62), dp(48)));
+        controls.addView(speed);
+
+        FrameLayout soundSlot = new FrameLayout(this);
+        soundSlot.setLayoutParams(new LinearLayout.LayoutParams(dp(58), dp(48)));
+        XUi.IconView sound = new XUi.IconView(this, XUi.IconView.SOUND, Color.WHITE);
+        XUi.IconView muted = new XUi.IconView(this, XUi.IconView.SOUND_OFF, Color.WHITE);
+        sound.setLayoutParams(new FrameLayout.LayoutParams(dp(28), dp(28), Gravity.CENTER));
+        muted.setLayoutParams(new FrameLayout.LayoutParams(dp(28), dp(28), Gravity.CENTER));
+        muted.setVisibility(View.GONE);
+        soundSlot.addView(sound);
+        soundSlot.addView(muted);
+        controls.addView(soundSlot);
+
+        Space spacer = new Space(this);
+        spacer.setLayoutParams(new LinearLayout.LayoutParams(0, 1, 1f));
+        controls.addView(spacer);
+
+        XUi.IconView expand = new XUi.IconView(this, XUi.IconView.MEDIA_EXPAND, Color.WHITE);
+        expand.setLayoutParams(new LinearLayout.LayoutParams(dp(50), dp(48)));
+        expand.setPadding(dp(12), dp(11), dp(12), dp(11));
+        controls.addView(expand);
+        bottom.addView(controls);
+        root.addView(bottom);
+
+        final MediaPlayer[] playerRef = new MediaPlayer[1];
+        final int[] duration = {0};
+        final boolean[] dragging = {false};
+        final boolean[] isMuted = {false};
+        final int[] speedIndex = {0};
+        final float[] speeds = {1f, 1.5f, 2f, .5f};
+
+        video.setOnPreparedListener(mp -> {
+            playerRef[0] = mp;
+            duration[0] = Math.max(1, mp.getDuration());
+            try { mp.setVolume(1f, 1f); } catch (Exception ignored) {}
+            try {
+                if (Build.VERSION.SDK_INT >= 23) {
+                    mp.setPlaybackParams(new PlaybackParams().setSpeed(speeds[speedIndex[0]]));
+                }
+            } catch (Exception ignored) {}
+            video.start();
+            pause.setVisibility(View.VISIBLE);
+            play.setVisibility(View.GONE);
+        });
+
+        video.setOnCompletionListener(mp -> {
+            pause.setVisibility(View.GONE);
+            play.setVisibility(View.VISIBLE);
+            seek.setProgress(1000);
+        });
+
+        playSlot.setOnClickListener(v -> {
+            if (video.isPlaying()) {
+                video.pause();
+                pause.setVisibility(View.GONE);
+                play.setVisibility(View.VISIBLE);
+            } else {
+                video.start();
+                pause.setVisibility(View.VISIBLE);
+                play.setVisibility(View.GONE);
+            }
+        });
+
+        seek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar bar, int progress, boolean fromUser) {
+                if (fromUser && duration[0] > 0) {
+                    int target = (int)(duration[0] * (progress / 1000f));
+                    remaining.setText(formatVideoRemaining(duration[0] - target));
+                }
+            }
+            @Override public void onStartTrackingTouch(SeekBar bar) { dragging[0] = true; }
+            @Override public void onStopTrackingTouch(SeekBar bar) {
+                dragging[0] = false;
+                if (duration[0] > 0) {
+                    video.seekTo((int)(duration[0] * (bar.getProgress() / 1000f)));
+                }
+            }
+        });
+
+        speed.setOnClickListener(v -> {
+            speedIndex[0] = (speedIndex[0] + 1) % speeds.length;
+            float selected = speeds[speedIndex[0]];
+            speed.setText(selected == 1f ? "1x" : (selected == .5f ? "0.5x" : (selected == 1.5f ? "1.5x" : "2x")));
+            try {
+                if (Build.VERSION.SDK_INT >= 23 && playerRef[0] != null) {
+                    playerRef[0].setPlaybackParams(new PlaybackParams().setSpeed(selected));
+                }
+            } catch (Exception ignored) {}
+        });
+
+        soundSlot.setOnClickListener(v -> {
+            isMuted[0] = !isMuted[0];
+            try {
+                if (playerRef[0] != null) playerRef[0].setVolume(isMuted[0] ? 0f : 1f, isMuted[0] ? 0f : 1f);
+            } catch (Exception ignored) {}
+            sound.setVisibility(isMuted[0] ? View.GONE : View.VISIBLE);
+            muted.setVisibility(isMuted[0] ? View.VISIBLE : View.GONE);
+        });
+
+        expand.setOnClickListener(v -> {
+            View decor = getWindow().getDecorView();
+            int current = decor.getSystemUiVisibility();
+            boolean immersive = (current & View.SYSTEM_UI_FLAG_FULLSCREEN) != 0;
+            if (immersive) {
+                decor.setSystemUiVisibility(0);
+            } else {
+                decor.setSystemUiVisibility(
+                        View.SYSTEM_UI_FLAG_FULLSCREEN |
+                        View.SYSTEM_UI_FLAG_HIDE_NAVIGATION |
+                        View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
+            }
+        });
+
+        Runnable updater = new Runnable() {
+            @Override public void run() {
+                if (generation != mediaRenderGeneration || currentScreen != SCREEN_MEDIA || currentMediaPostId != p.id) return;
+                try {
+                    if (duration[0] > 0 && !dragging[0]) {
+                        int pos = Math.max(0, video.getCurrentPosition());
+                        seek.setProgress(Math.min(1000, Math.round(pos * 1000f / duration[0])));
+                        remaining.setText(formatVideoRemaining(Math.max(0, duration[0] - pos)));
+                    }
+                } catch (Exception ignored) {}
+                uiHandler.postDelayed(this, 200);
+            }
+        };
+
+        setScreen(root);
+        video.setVideoPath(p.mediaPath);
+        video.requestFocus();
+        uiHandler.post(updater);
+    }
+
+    private LinearLayout mediaTopControls(Post p) {
+        LinearLayout top = hbox();
+        top.setGravity(Gravity.CENTER_VERTICAL);
+        top.setPadding(dp(14), dp(8), dp(14), dp(8));
+        top.setBackgroundColor(Color.BLACK);
+        top.setLayoutParams(new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(64)));
+
+        XUi.IconView back = new XUi.IconView(this, XUi.IconView.BACK, Color.WHITE);
+        back.setLayoutParams(new LinearLayout.LayoutParams(dp(48), dp(48)));
+        back.setPadding(dp(12), dp(12), dp(12), dp(12));
+        back.setBackground(XUi.rounded(0x552f3336, 999, this));
+        back.setOnClickListener(v -> onBackPressed());
+        top.addView(back);
+
+        Space spacer = new Space(this);
+        spacer.setLayoutParams(new LinearLayout.LayoutParams(0, 1, 1f));
+        top.addView(spacer);
+
+        XUi.IconView more = new XUi.IconView(this, XUi.IconView.MORE, Color.WHITE);
+        more.setLayoutParams(new LinearLayout.LayoutParams(dp(48), dp(48)));
+        more.setPadding(dp(12), dp(12), dp(12), dp(12));
+        more.setBackground(XUi.rounded(0x552f3336, 999, this));
+        more.setOnClickListener(v -> showPostMenu(p.id));
+        top.addView(more);
+        return top;
+    }
+
+    private View mediaAuthorRow(Account a, boolean overlay) {
+        LinearLayout row = hbox();
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(18), dp(9), dp(18), dp(9));
+        row.setBackgroundColor(overlay ? 0x22000000 : Color.BLACK);
+
+        XUi.AvatarView avatar = new XUi.AvatarView(this, a);
+        LinearLayout.LayoutParams ap = new LinearLayout.LayoutParams(dp(46), dp(46));
+        ap.setMargins(0, 0, dp(10), 0);
+        avatar.setLayoutParams(ap);
+        avatar.setOnClickListener(v -> renderProfile(a.id));
+        row.addView(avatar);
+
+        LinearLayout identity = vbox();
+        identity.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        LinearLayout nameRow = hbox();
+        TextView name = tv(a.name, 16, Color.WHITE, true);
+        nameRow.addView(name);
+        if (a.verified) nameRow.addView(verifiedBadge(17));
+        identity.addView(nameRow);
+        identity.addView(tv("@" + a.handle, 14, 0xffb5b8bd, false));
+        identity.setOnClickListener(v -> renderProfile(a.id));
+        row.addView(identity);
+
+        if (a.id != currentAccountId) {
+            boolean following = db.isFollowing(currentAccountId, a.id);
+            TextView follow = tv(following ? "Following" : "Follow", 15,
+                    following ? Color.WHITE : Color.BLACK, true);
+            follow.setGravity(Gravity.CENTER);
+            follow.setPadding(dp(18), 0, dp(18), 0);
+            follow.setBackground(XUi.stroked(
+                    following ? 0x442f3336 : Color.WHITE,
+                    following ? 0xff8b98a5 : Color.WHITE, 999, this));
+            follow.setLayoutParams(new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, dp(40)));
+            follow.setOnClickListener(v -> {
+                db.toggleFollow(currentAccountId, a.id);
+                renderMedia(currentMediaPostId);
+            });
+            row.addView(follow);
+        }
+        return row;
+    }
+
+    private LinearLayout mediaActionRow(Post p, boolean pillBackground) {
+        LinearLayout actions = hbox();
+        actions.setGravity(Gravity.CENTER);
+        actions.setPadding(dp(14), dp(7), dp(14), dp(7));
+        actions.setBackgroundColor(pillBackground ? 0x22000000 : Color.BLACK);
+
+        boolean reposted = db.hasInteraction(currentAccountId, p.id, "repost");
+        boolean liked = db.hasInteraction(currentAccountId, p.id, "like");
+        boolean bookmarked = db.hasInteraction(currentAccountId, p.id, "bookmark");
+
+        actions.addView(mediaActionItem(XUi.IconView.REPLY, p.replies, 0xffe7e9ea, false, pillBackground, () -> {
+            composeDraft = "";
+            composeMediaPath = null;
+            composeAuthorId = currentAccountId;
+            activeDraftId = -1;
+            composeLocation = "";
+            composePollOptions.clear();
+            composeScheduledAt = 0L;
+            showComposer(p.id, null);
+        }));
+        actions.addView(mediaActionItem(XUi.IconView.REPOST, p.reposts, reposted ? XUi.GREEN : 0xffe7e9ea,
+                reposted, pillBackground, () -> {
+                    db.toggleInteraction(currentAccountId, p.id, "repost");
+                    renderMedia(p.id);
+                }));
+        actions.addView(mediaActionItem(XUi.IconView.HEART, p.likes, liked ? XUi.PINK : 0xffe7e9ea,
+                liked, pillBackground, () -> {
+                    db.toggleInteraction(currentAccountId, p.id, "like");
+                    renderMedia(p.id);
+                }));
+        actions.addView(mediaActionItem(XUi.IconView.BOOKMARK, -1, bookmarked ? XUi.BLUE : 0xffe7e9ea,
+                bookmarked, pillBackground, () -> {
+                    db.toggleInteraction(currentAccountId, p.id, "bookmark");
+                    renderMedia(p.id);
+                }));
+        actions.addView(mediaActionItem(XUi.IconView.SHARE, -1, 0xffe7e9ea, false, pillBackground,
+                () -> showShareMenu(p.id)));
+        return actions;
+    }
+
+    private View mediaActionItem(int iconType, long count, int color, boolean active,
+                                 boolean pillBackground, Runnable action) {
+        LinearLayout item = hbox();
+        item.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(50), 1f);
+        lp.setMargins(dp(3), 0, dp(3), 0);
+        item.setLayoutParams(lp);
+        if (pillBackground) item.setBackground(XUi.rounded(0x66363a3d, 999, this));
+
+        XUi.IconView icon = new XUi.IconView(this, iconType, color);
+        icon.setActive(active);
+        icon.setLayoutParams(new LinearLayout.LayoutParams(dp(28), dp(28)));
+        icon.setPadding(dp(5), dp(5), dp(5), dp(5));
+        item.addView(icon);
+
+        if (count >= 0) {
+            TextView number = tv(formatCount(count), 13, color, false);
+            number.setSingleLine(true);
+            number.setPadding(dp(2), 0, 0, 0);
+            item.addView(number);
+        }
+        item.setOnClickListener(v -> action.run());
+        return item;
+    }
+
+    private View mediaReplyBar(Post p) {
+        LinearLayout reply = hbox();
+        reply.setGravity(Gravity.CENTER_VERTICAL);
+        reply.setPadding(dp(14), dp(10), dp(14), dp(12));
+        reply.setBackgroundColor(Color.BLACK);
+
+        Account me = account(currentAccountId);
+        XUi.AvatarView avatar = new XUi.AvatarView(this, me);
+        LinearLayout.LayoutParams ap = new LinearLayout.LayoutParams(dp(42), dp(42));
+        ap.setMargins(0, 0, dp(10), 0);
+        avatar.setLayoutParams(ap);
+        reply.addView(avatar);
+
+        TextView prompt = tv("Post your reply", 15, 0xff8b98a5, false);
+        prompt.setGravity(Gravity.CENTER_VERTICAL);
+        prompt.setPadding(dp(14), 0, dp(14), 0);
+        prompt.setBackground(XUi.stroked(0xff101214, 0xff2f3336, 999, this));
+        prompt.setLayoutParams(new LinearLayout.LayoutParams(0, dp(46), 1f));
+        reply.addView(prompt);
+        reply.setOnClickListener(v -> {
+            composeDraft = "";
+            composeMediaPath = null;
+            composeAuthorId = currentAccountId;
+            activeDraftId = -1;
+            composeLocation = "";
+            composePollOptions.clear();
+            composeScheduledAt = 0L;
+            showComposer(p.id, null);
+        });
+        return reply;
+    }
+
+    private String formatVideoRemaining(int millis) {
+        int totalSeconds = Math.max(0, millis / 1000);
+        int minutes = totalSeconds / 60;
+        int seconds = totalSeconds % 60;
+        return String.format(Locale.US, "-%d:%02d", minutes, seconds);
+    }
+
     private void renderProfile(long accountId) {
         Account a = db.getAccount(accountId);
         if (a == null) return;
