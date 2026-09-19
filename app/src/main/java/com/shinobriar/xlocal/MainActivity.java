@@ -19,6 +19,9 @@ import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.graphics.ImageDecoder;
 import android.graphics.Typeface;
+import android.media.MediaMetadataRetriever;
+import android.media.MediaPlayer;
+import android.media.PlaybackParams;
 import android.graphics.drawable.AnimatedImageDrawable;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
@@ -54,9 +57,11 @@ import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.SeekBar;
 import android.widget.Space;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.widget.VideoView;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
@@ -103,6 +108,7 @@ public class MainActivity extends Activity {
     private static final int SCREEN_CHAT = 8;
     private static final int SCREEN_DRAFTS = 9;
     private static final int SCREEN_FOLLOW_LIST = 10;
+    private static final int SCREEN_MEDIA = 11;
 
     private LocalDb db;
     private SharedPreferences prefs;
@@ -119,6 +125,8 @@ public class MainActivity extends Activity {
     private int profileTab = 0;
     private long currentPostId = -1;
     private long currentChatId = -1;
+    private long currentMediaPostId = -1;
+    private int currentThreadReplyLimit = 10;
     private boolean currentFollowListFollowing = true;
     private String currentSearchQuery = "";
 
@@ -147,6 +155,8 @@ public class MainActivity extends Activity {
         int profileTab;
         long postId;
         long chatId;
+        long mediaPostId;
+        int threadReplyLimit;
         boolean followFollowing;
         String searchQuery;
 
@@ -155,6 +165,8 @@ public class MainActivity extends Activity {
             this.profileId = -1;
             this.postId = -1;
             this.chatId = -1;
+            this.mediaPostId = -1;
+            this.threadReplyLimit = 10;
             this.searchQuery = "";
         }
     }
