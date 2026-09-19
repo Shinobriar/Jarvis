@@ -385,6 +385,8 @@ public class MainActivity extends Activity {
         state.profileTab = profileTab;
         state.postId = currentPostId;
         state.chatId = currentChatId;
+        state.mediaPostId = currentMediaPostId;
+        state.threadReplyLimit = currentThreadReplyLimit;
         state.followFollowing = currentFollowListFollowing;
         state.searchQuery = currentSearchQuery == null ? "" : currentSearchQuery;
         return state;
@@ -395,6 +397,7 @@ public class MainActivity extends Activity {
         if (targetScreen == SCREEN_PROFILE) return currentProfileId == targetId;
         if (targetScreen == SCREEN_POST) return currentPostId == targetId;
         if (targetScreen == SCREEN_CHAT) return currentChatId == targetId;
+        if (targetScreen == SCREEN_MEDIA) return currentMediaPostId == targetId;
         if (targetScreen == SCREEN_FOLLOW_LIST) {
             return currentProfileId == targetId && currentFollowListFollowing == targetFlag;
         }
@@ -425,6 +428,7 @@ public class MainActivity extends Activity {
             try {
                 homeForYou = state.homeForYou;
                 profileTab = state.profileTab;
+                currentThreadReplyLimit = Math.max(10, state.threadReplyLimit);
                 currentSearchQuery = state.searchQuery == null ? "" : state.searchQuery;
 
                 if (state.screen == SCREEN_HOME) {
@@ -447,6 +451,8 @@ public class MainActivity extends Activity {
                     renderDrafts();
                 } else if (state.screen == SCREEN_FOLLOW_LIST && state.profileId > 0) {
                     renderFollowList(state.profileId, state.followFollowing);
+                } else if (state.screen == SCREEN_MEDIA && state.mediaPostId > 0 && db.getPost(state.mediaPostId) != null) {
+                    renderMedia(state.mediaPostId);
                 } else {
                     continue;
                 }
@@ -3554,6 +3560,7 @@ public class MainActivity extends Activity {
         else if (currentScreen == SCREEN_CHAT && currentChatId > 0) renderChat(currentChatId);
         else if (currentScreen == SCREEN_DRAFTS) renderDrafts();
         else if (currentScreen == SCREEN_FOLLOW_LIST && currentProfileId > 0) renderFollowList(currentProfileId, currentFollowListFollowing);
+        else if (currentScreen == SCREEN_MEDIA && currentMediaPostId > 0) renderMedia(currentMediaPostId);
         else renderHome();
     }
 
