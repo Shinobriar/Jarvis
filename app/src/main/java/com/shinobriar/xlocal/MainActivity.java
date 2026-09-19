@@ -1114,8 +1114,45 @@ public class MainActivity extends Activity {
         bubble.setPadding(dp(13), dp(9), dp(13), dp(9));
         bubble.setBackground(XUi.rounded(mine ? XUi.BLUE : pal.surface, 18, this));
         bubble.setMaxWidth(dp(290));
+        if (mine) {
+            bubble.setOnLongClickListener(v -> {
+                showMessageMenu(m);
+                return true;
+            });
+        }
         line.addView(bubble);
         return line;
+    }
+
+    private void showMessageMenu(DirectMessage m) {
+        String[] options = {"Edit message", "Delete message"};
+        new AlertDialog.Builder(this)
+                .setItems(options, (d, which) -> {
+                    if (which == 0) {
+                        EditText edit = field("Message", true);
+                        edit.setText(m.body);
+                        new AlertDialog.Builder(this)
+                                .setTitle("Edit message")
+                                .setView(edit)
+                                .setNegativeButton("Cancel", null)
+                                .setPositiveButton("Save", (x,w) -> {
+                                    String value = edit.getText().toString().trim();
+                                    if (!value.isEmpty()) {
+                                        db.updateMessage(m.id, currentAccountId, value);
+                                        renderChat(currentChatId);
+                                    }
+                                }).show();
+                    } else {
+                        new AlertDialog.Builder(this)
+                                .setTitle("Delete message?")
+                                .setMessage("This removes the local message from this simulated conversation.")
+                                .setNegativeButton("Cancel", null)
+                                .setPositiveButton("Delete", (x,w) -> {
+                                    db.deleteMessage(m.id, currentAccountId);
+                                    renderChat(currentChatId);
+                                }).show();
+                    }
+                }).show();
     }
 
     private void renderBookmarks() {
