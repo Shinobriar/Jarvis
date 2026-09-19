@@ -254,7 +254,11 @@ public class MainActivity extends Activity {
                 List<Account> matches = db.searchAccounts(token, currentAccountId);
                 suggestions.removeAllViews();
                 int shown = 0;
+                String tokenLower = token.toLowerCase(Locale.US);
                 for (Account a : matches) {
+                    String handleLower = a.handle == null ? "" : a.handle.toLowerCase(Locale.US);
+                    String nameLower = a.name == null ? "" : a.name.toLowerCase(Locale.US);
+                    if (!handleLower.contains(tokenLower) && !nameLower.contains(tokenLower)) continue;
                     if (shown++ >= 12) break;
                     LinearLayout row = hbox();
                     row.setPadding(dp(10), dp(7), dp(10), dp(7));
@@ -1981,8 +1985,17 @@ public class MainActivity extends Activity {
                         long oldest = new java.util.GregorianCalendar(2011, 0, 1).getTimeInMillis();
                         long joined = oldest + (long)(random.nextDouble() * Math.max(1L, now - oldest));
                         long id;
-                        if (makeBots) id = db.createBotAccount(name, handle, bio, persona, color, joined);
-                        else id = db.createAccount(name, handle, bio, color, false, false);
+                        if (makeBots) {
+                            id = db.createBotAccount(name, handle, bio, persona, color, joined);
+                            db.scheduleBot(id, now + (15L + random.nextInt(166)) * 1000L);
+                        } else {
+                            id = db.createAccount(name, handle, bio, color, false, false);
+                            Account generated = db.getAccount(id);
+                            if (generated != null) {
+                                generated.createdAt = joined;
+                                db.updateAccount(generated);
+                            }
+                        }
                         if (random.nextBoolean()) db.toggleFollow(id, currentAccountId);
                         if (random.nextInt(100) < 35) db.toggleFollow(currentAccountId, id);
                         made++;
