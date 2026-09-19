@@ -1,0 +1,27 @@
+name: Export Android signer
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ensure build tools
+        run: |
+          export ANDROID_HOME=/usr/local/lib/android/sdk
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "build-tools;35.0.0"
+      - name: Bundle apksigner
+        run: |
+          mkdir -p signer/lib
+          cp /usr/local/lib/android/sdk/build-tools/35.0.0/apksigner signer/
+          cp /usr/local/lib/android/sdk/build-tools/35.0.0/lib/apksigner.jar signer/lib/
+          chmod +x signer/apksigner
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-apksigner-35
+          path: signer
+          if-no-files-found: error
