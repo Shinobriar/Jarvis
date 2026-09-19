@@ -791,17 +791,11 @@ public class MainActivity extends Activity {
         addPostExtras(content, p, false);
 
         if (p.mediaPath != null && new File(p.mediaPath).exists()) {
-            ImageView image = new ImageView(this);
-            image.setScaleType(ImageView.ScaleType.CENTER_CROP);
-            setMediaImage(image, p.mediaPath, 1200, 900);
-            image.setBackground(XUi.rounded(pal.surface, 14, this));
-            image.setClipToOutline(true);
-            image.setOutlineProvider(ViewOutlineProvider.BACKGROUND);
-            image.setOnClickListener(v -> renderPost(p.id));
+            View media = postMediaPreview(p, dp(260), 14);
             LinearLayout.LayoutParams ip = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(260));
             ip.setMargins(0, dp(4), dp(4), dp(7));
-            image.setLayoutParams(ip);
-            content.addView(image);
+            media.setLayoutParams(ip);
+            content.addView(media);
         }
 
         if (p.quoteOf != null) {
@@ -895,16 +889,11 @@ public class MainActivity extends Activity {
         addPostExtras(card, p, true);
 
         if (p.mediaPath != null && new File(p.mediaPath).exists()) {
-            ImageView image = new ImageView(this);
-            image.setScaleType(ImageView.ScaleType.CENTER_CROP);
-            setMediaImage(image, p.mediaPath, 1400, 1000);
-            image.setBackground(XUi.rounded(pal.surface, 16, this));
-            image.setClipToOutline(true);
-            image.setOutlineProvider(ViewOutlineProvider.BACKGROUND);
+            View media = postMediaPreview(p, dp(340), 16);
             LinearLayout.LayoutParams ip = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(340));
             ip.setMargins(0, 0, 0, dp(12));
-            image.setLayoutParams(ip);
-            card.addView(image);
+            media.setLayoutParams(ip);
+            card.addView(media);
         }
 
         if (p.quoteOf != null) {
