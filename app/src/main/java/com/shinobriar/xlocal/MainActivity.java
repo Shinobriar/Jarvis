@@ -106,6 +106,7 @@ public class MainActivity extends Activity {
     private int profileTab = 0;
     private long currentPostId = -1;
     private long currentChatId = -1;
+    private boolean currentFollowListFollowing = true;
 
     private long pendingImageAccountId = -1;
     private String pendingSaveMediaPath;
@@ -975,6 +976,7 @@ public class MainActivity extends Activity {
         }
         currentScreen = SCREEN_FOLLOW_LIST;
         currentProfileId = accountId;
+        currentFollowListFollowing = followingList;
 
         LinearLayout shell = vbox();
         shell.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
@@ -2754,7 +2756,8 @@ public class MainActivity extends Activity {
     private void goBackFromSubscreen() {
         if (currentScreen == SCREEN_CHAT) renderMessages();
         else if (currentScreen == SCREEN_POST) renderHome();
-        else if (currentScreen == SCREEN_PROFILE || currentScreen == SCREEN_BOOKMARKS) renderHome();
+        else if (currentScreen == SCREEN_FOLLOW_LIST && currentProfileId > 0) renderProfile(currentProfileId);
+        else if (currentScreen == SCREEN_PROFILE || currentScreen == SCREEN_BOOKMARKS || currentScreen == SCREEN_DRAFTS) renderHome();
         else renderHome();
     }
 
@@ -2768,6 +2771,8 @@ public class MainActivity extends Activity {
         else if (currentScreen == SCREEN_POST && currentPostId > 0) renderPost(currentPostId);
         else if (currentScreen == SCREEN_BOOKMARKS) renderBookmarks();
         else if (currentScreen == SCREEN_CHAT && currentChatId > 0) renderChat(currentChatId);
+        else if (currentScreen == SCREEN_DRAFTS) renderDrafts();
+        else if (currentScreen == SCREEN_FOLLOW_LIST && currentProfileId > 0) renderFollowList(currentProfileId, currentFollowListFollowing);
         else renderHome();
     }
 
