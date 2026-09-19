@@ -641,7 +641,7 @@ public class MainActivity extends Activity {
         if (p.mediaPath != null && new File(p.mediaPath).exists()) {
             ImageView image = new ImageView(this);
             image.setScaleType(ImageView.ScaleType.CENTER_CROP);
-            image.setImageBitmap(decodeScaled(p.mediaPath, 1200, 900));
+            setMediaImage(image, p.mediaPath, 1200, 900);
             image.setBackground(XUi.rounded(pal.surface, 14, this));
             image.setClipToOutline(true);
             image.setOutlineProvider(ViewOutlineProvider.BACKGROUND);
@@ -743,7 +743,7 @@ public class MainActivity extends Activity {
         if (p.mediaPath != null && new File(p.mediaPath).exists()) {
             ImageView image = new ImageView(this);
             image.setScaleType(ImageView.ScaleType.CENTER_CROP);
-            image.setImageBitmap(decodeScaled(p.mediaPath, 1400, 1000));
+            setMediaImage(image, p.mediaPath, 1400, 1000);
             image.setBackground(XUi.rounded(pal.surface, 16, this));
             image.setClipToOutline(true);
             image.setOutlineProvider(ViewOutlineProvider.BACKGROUND);
@@ -1620,7 +1620,7 @@ public class MainActivity extends Activity {
 
             ImageView image = new ImageView(this);
             image.setScaleType(ImageView.ScaleType.CENTER_CROP);
-            image.setImageBitmap(decodeScaled(composeMediaPath, 1200, 900));
+            setMediaImage(image, composeMediaPath, 1200, 900);
             image.setBackground(XUi.rounded(pal.surface, 16, this));
             image.setClipToOutline(true);
             image.setOutlineProvider(ViewOutlineProvider.BACKGROUND);
@@ -2999,6 +2999,19 @@ public class MainActivity extends Activity {
             int n;
             while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
         }
+    }
+
+    private void setMediaImage(ImageView image, String path, int maxW, int maxH) {
+        try {
+            if (path != null && path.toLowerCase(Locale.US).endsWith(".gif") && Build.VERSION.SDK_INT >= 28) {
+                ImageDecoder.Source source = ImageDecoder.createSource(new File(path));
+                Drawable drawable = ImageDecoder.decodeDrawable(source);
+                image.setImageDrawable(drawable);
+                if (drawable instanceof AnimatedImageDrawable) ((AnimatedImageDrawable) drawable).start();
+                return;
+            }
+        } catch (Exception ignored) {}
+        image.setImageBitmap(decodeScaled(path, maxW, maxH));
     }
 
     private Bitmap decodeScaled(String path, int maxW, int maxH) {
