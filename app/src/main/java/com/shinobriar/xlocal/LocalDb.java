@@ -376,6 +376,156 @@ final class LocalDb extends SQLiteOpenHelper {
         return id;
     }
 
+    long insertPostWithExtras(long authorId, String body, String mediaPath, Long replyTo, Long quoteOf,
+                              String location, List<String> pollOptions) {
+        long id = insertPost(authorId, body, mediaPath, replyTo, quoteOf);
+        setPostExtras(id, location, pollOptions);
+        return id;
+    }
+
+    private void setPostExtras(long postId, String location, List<String> pollOptions) {
+        ContentValues v = new ContentValues();
+        v.put("location", location == null ? "" : location.trim());
+        String encoded = encodePollOptions(pollOptions);
+        v.put("poll_options", encoded);
+        if (encoded.isEmpty()) {
+            v.put("poll_counts", "");
+        } else {
+            String[] parts = encoded.split("\\u001F", -1);
+            StringBuilder counts = new StringBuilder();
+            for (int i = 0; i < parts.length; i++) {
+                if (i > 0) counts.append(",");
+                counts.append("0");
+            }
+            v.put("poll_counts", counts.toString());
+        }
+        getWritableDatabase().update("posts", v, "id=?", new String[]{String.valueOf(postId)});
+    }
+
+    long schedulePost(long authorId, String body, String mediaPath, Long replyTo, Long quoteOf,
+                      String location, List<String> pollOptions, long publishAt) {
+        ContentValues v = new ContentValues();
+        v.put("author_id", authorId);
+        v.put("body", body == null ? "" : body);
+        if (mediaPath == null) v.putNull("media_path"); else v.put("media_path", mediaPath);
+        if (replyTo == null) v.putNull("reply_to"); else v.put("reply_to", replyTo);
+        if (quoteOf == null) v.putNull("quote_of"); else v.put("quote_of", quoteOf);
+        v.put("location", location == null ? "" : location.trim());
+        v.put("poll_options", encodePollOptions(pollOptions));
+        v.put("publish_at", publishAt);
+        return getWritableDatabase().insertOrThrow("scheduled_posts", null, v);
+    }
+
+    int publishDueScheduled() {
+        SQLiteDatabase db = getWritableDatabase();
+        ArrayList<Long> done = new ArrayList<>();
+        int published = 0;
+        Cursor c = db.query("scheduled_posts", null, "publish_at<=?",
+                new String[]{String.valueOf(System.currentTimeMillis())}, null, null, "publish_at ASC");
+        try {
+            while (c.moveToNext()) {
+                long sid = c.getLong(c.getColumnIndexOrThrow("id"));
+                long authorId = c.getLong(c.getColumnIndexOrThrow("author_id"));
+                String body = c.getString(c.getColumnIndexOrThrow("body"));
+                String media = c.getString(c.getColumnIndexOrThrow("media_path"));
+                int rr = c.getColumnIndexOrThrow("reply_to");
+                Long replyTo = c.isNull(rr) ? null : c.getLong(rr);
+                int qq = c.getColumnIndexOrThrow("quote_of");
+                Long quoteOf = c.isNull(qq) ? null : c.getLong(qq);
+                String location = c.getString(c.getColumnIndexOrThrow("location"));
+                String encodedPoll = c.getString(c.getColumnIndexOrThrow("poll_options"));
+                long publishAt = c.getLong(c.getColumnIndexOrThrow("publish_at"));
+
+                List<String> options = decodePollOptions(encodedPoll);
+                long postId = insertPostWithExtras(authorId, body, media, replyTo, quoteOf, location, options);
+                ContentValues time = new ContentValues();
+                time.put("created_at", publishAt);
+                db.update("posts", time, "id=?", new String[]{String.valueOf(postId)});
+                done.add(sid);
+                published++;
+            }
+        } finally { c.close(); }
+        for (Long id : done) db.delete("scheduled_posts", "id=?", new String[]{String.valueOf(id)});
+        return published;
+    }
+
+    boolean votePoll(long accountId, long postId, int optionIndex) {
+        Post p = getPost(postId);
+        if (p == null || p.pollOptions == null || optionIndex < 0 || optionIndex >= p.pollOptions.length) return false;
+        SQLiteDatabase db = getWritableDatabase();
+        if (DatabaseUtils.longForQuery(db, "SELECT COUNT(*) FROM poll_votes WHERE account_id=? AND post_id=?",
+                new String[]{String.valueOf(accountId), String.valueOf(postId)}) > 0) return false;
+
+        ContentValues vote = new ContentValues();
+        vote.put("account_id", accountId);
+        vote.put("post_id", postId);
+        vote.put("option_index", optionIndex);
+        vote.put("created_at", System.currentTimeMillis());
+        db.insertOrThrow("poll_votes", null, vote);
+
+        int[] counts = p.pollCounts == null ? new int[p.pollOptions.length] : p.pollCounts.clone();
+        if (counts.length != p.pollOptions.length) counts = new int[p.pollOptions.length];
+        counts[optionIndex]++;
+        ContentValues v = new ContentValues();
+        v.put("poll_counts", encodePollCounts(counts));
+        db.update("posts", v, "id=?", new String[]{String.valueOf(postId)});
+        return true;
+    }
+
+    int pollVoteFor(long accountId, long postId) {
+        Cursor c = getReadableDatabase().query("poll_votes", new String[]{"option_index"},
+                "account_id=? AND post_id=?", new String[]{String.valueOf(accountId), String.valueOf(postId)},
+                null, null, null, "1");
+        try { return c.moveToFirst() ? c.getInt(0) : -1; }
+        finally { c.close(); }
+    }
+
+    private String encodePollOptions(List<String> options) {
+        if (options == null || options.isEmpty()) return "";
+        ArrayList<String> clean = new ArrayList<>();
+        for (String option : options) {
+            if (option == null) continue;
+            String s = option.trim().replace("\u001F", " ");
+            if (!s.isEmpty()) clean.add(s);
+            if (clean.size() >= 4) break;
+        }
+        if (clean.size() < 2) return "";
+        StringBuilder b = new StringBuilder();
+        for (String s : clean) {
+            if (b.length() > 0) b.append('\u001F');
+            b.append(s);
+        }
+        return b.toString();
+    }
+
+    private List<String> decodePollOptions(String encoded) {
+        ArrayList<String> out = new ArrayList<>();
+        if (encoded == null || encoded.isEmpty()) return out;
+        String[] parts = encoded.split("\\u001F", -1);
+        for (String part : parts) if (!part.isEmpty()) out.add(part);
+        return out;
+    }
+
+    private String encodePollCounts(int[] counts) {
+        if (counts == null || counts.length == 0) return "";
+        StringBuilder b = new StringBuilder();
+        for (int i = 0; i < counts.length; i++) {
+            if (i > 0) b.append(",");
+            b.append(Math.max(0, counts[i]));
+        }
+        return b.toString();
+    }
+
+    private int[] decodePollCounts(String encoded, int size) {
+        int[] out = new int[Math.max(0, size)];
+        if (encoded == null || encoded.isEmpty()) return out;
+        String[] parts = encoded.split(",");
+        for (int i = 0; i < out.length && i < parts.length; i++) {
+            try { out[i] = Math.max(0, Integer.parseInt(parts[i])); } catch (Exception ignored) {}
+        }
+        return out;
+    }
+
     private long insertPostRaw(SQLiteDatabase db, long authorId, String body, String mediaPath, Long replyTo, Long quoteOf, long createdAt,
                                long likes, long reposts, long replies, long views, long bookmarks, double viralBoost) {
         ContentValues v = new ContentValues();
@@ -605,6 +755,10 @@ final class LocalDb extends SQLiteOpenHelper {
         p.views = c.getLong(c.getColumnIndexOrThrow("views"));
         p.bookmarks = c.getLong(c.getColumnIndexOrThrow("bookmarks"));
         p.viralBoost = c.getDouble(c.getColumnIndexOrThrow("viral_boost"));
+        p.location = c.getString(c.getColumnIndexOrThrow("location"));
+        List<String> poll = decodePollOptions(c.getString(c.getColumnIndexOrThrow("poll_options")));
+        p.pollOptions = poll.toArray(new String[0]);
+        p.pollCounts = decodePollCounts(c.getString(c.getColumnIndexOrThrow("poll_counts")), p.pollOptions.length);
         p.profileRepost = false;
         p.profileActorId = p.authorId;
         p.profileEventAt = p.createdAt;
@@ -632,6 +786,7 @@ final class LocalDb extends SQLiteOpenHelper {
         if (p != null && p.replyTo != null) {
             db.execSQL("UPDATE posts SET replies=MAX(0,replies-1) WHERE id=?", new Object[]{p.replyTo});
         }
+        db.delete("poll_votes", "post_id=?", new String[]{String.valueOf(id)});
         db.delete("interactions", "post_id=?", new String[]{String.valueOf(id)});
         db.delete("notifications", "post_id=?", new String[]{String.valueOf(id)});
         db.delete("posts", "id=?", new String[]{String.valueOf(id)});
@@ -897,6 +1052,8 @@ final class LocalDb extends SQLiteOpenHelper {
         SQLiteDatabase db = getWritableDatabase();
         db.beginTransaction();
         try {
+            db.execSQL("DELETE FROM scheduled_posts");
+            db.execSQL("DELETE FROM poll_votes");
             db.execSQL("DELETE FROM drafts");
             db.execSQL("DELETE FROM messages");
             db.execSQL("DELETE FROM notifications");
