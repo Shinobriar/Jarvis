@@ -22,7 +22,14 @@ import android.os.Build;
 import android.os.Bundle;
 import android.text.Editable;
 import android.text.InputType;
+import android.text.Spannable;
+import android.text.SpannableStringBuilder;
+import android.text.Spanned;
+import android.text.TextPaint;
 import android.text.TextWatcher;
+import android.text.method.LinkMovementMethod;
+import android.text.style.ClickableSpan;
+import android.text.style.ForegroundColorSpan;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -34,6 +41,7 @@ import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -57,6 +65,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Random;
 import java.util.UUID;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
@@ -78,9 +87,13 @@ public class MainActivity extends Activity {
     private static final int SCREEN_POST = 6;
     private static final int SCREEN_BOOKMARKS = 7;
     private static final int SCREEN_CHAT = 8;
+    private static final int SCREEN_DRAFTS = 9;
+    private static final int SCREEN_FOLLOW_LIST = 10;
 
     private LocalDb db;
     private SharedPreferences prefs;
+    private BotEngine botEngine;
+    private final Random random = new Random();
     private XUi.Palette pal;
     private int themeMode;
     private long currentAccountId;
@@ -99,6 +112,7 @@ public class MainActivity extends Activity {
     private long composeAuthorId = -1;
     private Long composeReplyTo;
     private Long composeQuoteOf;
+    private long activeDraftId = -1;
 
     private final Map<Long, Account> accountCache = new HashMap<>();
 
@@ -112,7 +126,17 @@ public class MainActivity extends Activity {
         currentAccountId = prefs.getLong("current_account", -1);
         ensureCurrentAccount();
         applySystemBars();
+        botEngine = new BotEngine(this, db, prefs, () -> {
+            if (!isFinishing() && currentScreen == SCREEN_HOME) renderHome();
+        });
+        botEngine.start();
         renderHome();
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (botEngine != null) botEngine.shutdown();
+        super.onDestroy();
     }
 
     private void ensureCurrentAccount() {
