@@ -43,6 +43,7 @@ final class Post {
     String location;
     String[] pollOptions;
     int[] pollCounts;
+    int threadDepth;
 }
 
 final class LocalNotification {
