@@ -3822,6 +3822,67 @@ public class MainActivity extends Activity {
         }
     }
 
+    private View postMediaPreview(Post p, int heightPx, int radiusDp) {
+        FrameLayout frame = new FrameLayout(this);
+        frame.setBackground(XUi.rounded(pal.surface, radiusDp, this));
+        frame.setClipToOutline(true);
+        frame.setOutlineProvider(ViewOutlineProvider.BACKGROUND);
+
+        ImageView image = new ImageView(this);
+        image.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        setMediaPreviewImage(image, p.mediaPath, 1400, 1000);
+        image.setLayoutParams(new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        frame.addView(image);
+
+        if (isVideoPath(p.mediaPath)) {
+            XUi.IconView play = new XUi.IconView(this, XUi.IconView.PLAY, Color.WHITE);
+            FrameLayout.LayoutParams pp = new FrameLayout.LayoutParams(dp(58), dp(58), Gravity.CENTER);
+            play.setLayoutParams(pp);
+            play.setPadding(dp(15), dp(15), dp(15), dp(15));
+            play.setBackground(XUi.rounded(0xaa000000, 999, this));
+            frame.addView(play);
+        }
+
+        frame.setOnClickListener(v -> renderMedia(p.id));
+        return frame;
+    }
+
+    private void setMediaPreviewImage(ImageView image, String path, int maxW, int maxH) {
+        if (isVideoPath(path)) {
+            Bitmap thumbnail = videoThumbnail(path, maxW, maxH);
+            if (thumbnail != null) {
+                image.setImageBitmap(thumbnail);
+                return;
+            }
+            image.setImageDrawable(new ColorDrawable(0xff111111));
+            return;
+        }
+        setMediaImage(image, path, maxW, maxH);
+    }
+
+    private Bitmap videoThumbnail(String path, int maxW, int maxH) {
+        MediaMetadataRetriever retriever = new MediaMetadataRetriever();
+        try {
+            retriever.setDataSource(path);
+            Bitmap frame = retriever.getFrameAtTime(0, MediaMetadataRetriever.OPTION_CLOSEST_SYNC);
+            if (frame == null) return null;
+            int w = frame.getWidth();
+            int h = frame.getHeight();
+            float scale = Math.min(1f, Math.min(maxW / (float)Math.max(1,w), maxH / (float)Math.max(1,h)));
+            if (scale >= .999f) return frame;
+            Bitmap scaled = Bitmap.createScaledBitmap(frame,
+                    Math.max(1, Math.round(w * scale)),
+                    Math.max(1, Math.round(h * scale)), true);
+            if (scaled != frame) frame.recycle();
+            return scaled;
+        } catch (Exception ignored) {
+            return null;
+        } finally {
+            try { retriever.release(); } catch (Exception ignored) {}
+        }
+    }
+
     private void setMediaImage(ImageView image, String path, int maxW, int maxH) {
         try {
             if (path != null && path.toLowerCase(Locale.US).endsWith(".gif") && Build.VERSION.SDK_INT >= 28) {
