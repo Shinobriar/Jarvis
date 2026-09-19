@@ -2942,6 +2942,9 @@ public class MainActivity extends Activity {
                         composeMediaPath = null;
                         composeAuthorId = currentAccountId;
                         activeDraftId = -1;
+                        composeLocation = "";
+                        composePollOptions.clear();
+                        composeScheduledAt = 0L;
                         showComposer(null, postId);
                     } else if (which == 2) {
                         db.toggleInteraction(currentAccountId, postId, "bookmark");
