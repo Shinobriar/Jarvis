@@ -458,6 +458,7 @@ public class MainActivity extends Activity {
             composeDraft = "";
             composeMediaPath = null;
             composeAuthorId = currentAccountId;
+            activeDraftId = -1;
             showComposer(null, null);
         });
         frame.addView(fab);
@@ -691,6 +692,7 @@ public class MainActivity extends Activity {
             composeDraft = "";
             composeMediaPath = null;
             composeAuthorId = currentAccountId;
+            activeDraftId = -1;
             showComposer(p.id, null);
         }));
         boolean reposted = db.hasInteraction(currentAccountId, p.id, "repost");
@@ -781,6 +783,7 @@ public class MainActivity extends Activity {
             composeDraft = "";
             composeMediaPath = null;
             composeAuthorId = currentAccountId;
+            activeDraftId = -1;
             showComposer(p.id, null);
         });
         shell.addView(XUi.divider(this, pal.border));
@@ -2362,6 +2365,7 @@ public class MainActivity extends Activity {
         composeDraft = p.body;
         composeMediaPath = p.mediaPath;
         composeAuthorId = currentAccountId;
+        activeDraftId = -1;
         showComposer(null, p.quoteOf);
     }
 
@@ -2378,6 +2382,7 @@ public class MainActivity extends Activity {
                         composeDraft = "";
                         composeMediaPath = null;
                         composeAuthorId = currentAccountId;
+                        activeDraftId = -1;
                         showComposer(null, postId);
                     } else if (which == 2) {
                         db.toggleInteraction(currentAccountId, postId, "bookmark");
