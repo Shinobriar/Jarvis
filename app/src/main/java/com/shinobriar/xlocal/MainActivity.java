@@ -2724,7 +2724,10 @@ public class MainActivity extends Activity {
         String fameLabel = botEngine != null && botEngine.isInstantFameActive()
                 ? "Instant Fame · active…"
                 : "Instant Fame · 5 seconds";
-        String[] options = {"Edit everything", "Make viral", fameLabel, "Duplicate / post as…", "Copy link", "Delete"};
+        String interactionsLabel = botEngine != null && botEngine.isInstantFameActive()
+                ? "Interactions · active…"
+                : "Interactions";
+        String[] options = {"Edit everything", "Make viral", fameLabel, interactionsLabel, "Duplicate / post as…", "Copy link", "Delete"};
         new AlertDialog.Builder(this)
                 .setTitle("Director Mode")
                 .setItems(options, (d, which) -> {
@@ -2745,10 +2748,12 @@ public class MainActivity extends Activity {
                     } else if (which == 2) {
                         startInstantFame();
                     } else if (which == 3) {
-                        duplicatePost(postId);
+                        showInteractionMoodPicker();
                     } else if (which == 4) {
-                        showShareMenu(postId);
+                        duplicatePost(postId);
                     } else if (which == 5) {
+                        showShareMenu(postId);
+                    } else if (which == 6) {
                         confirmDeletePost(postId);
                     }
                 })
@@ -2782,6 +2787,54 @@ public class MainActivity extends Activity {
             Toast.makeText(this, "Instant Fame started for " + name + " · 5 seconds", Toast.LENGTH_LONG).show();
         } else {
             Toast.makeText(this, "Instant Fame couldn't start right now", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void showInteractionMoodPicker() {
+        if (botEngine == null) {
+            Toast.makeText(this, "Bot engine isn't available", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if (botEngine.isInstantFameActive()) {
+            Toast.makeText(this, "A bot burst is already active", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if (db.botCount() <= 0) {
+            Toast.makeText(this, "Generate at least one AI bot account first", Toast.LENGTH_LONG).show();
+            return;
+        }
+
+        String[] moods = {
+                "Friendly",
+                "Obsessed",
+                "Hater",
+                "In love",
+                "Confused",
+                "Fangirl/Fanboy",
+                "Roast",
+                "Supportive",
+                "Chaotic",
+                "Curious"
+        };
+
+        new AlertDialog.Builder(this)
+                .setTitle("Interactions mood")
+                .setItems(moods, (dialog, which) -> startMoodInteractions(moods[which]))
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void startMoodInteractions(String mood) {
+        Account target = account(currentAccountId);
+        String label = target == null ? "the selected account" : "@" + target.handle;
+        boolean started = botEngine.startMoodInteractions(currentAccountId, mood, () -> {
+            Toast.makeText(this, mood + " interactions finished", Toast.LENGTH_SHORT).show();
+            refreshCurrent();
+        });
+        if (started) {
+            Toast.makeText(this, mood + " interactions started for " + label + " · 5 seconds", Toast.LENGTH_LONG).show();
+        } else {
+            Toast.makeText(this, "A bot burst is already active", Toast.LENGTH_SHORT).show();
         }
     }
 
