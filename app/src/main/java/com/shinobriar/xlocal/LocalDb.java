@@ -13,7 +13,7 @@ import java.util.Locale;
 
 final class LocalDb extends SQLiteOpenHelper {
     static final String DB_NAME = "xlocal.db";
-    static final int DB_VERSION = 1;
+    static final int DB_VERSION = 2;
 
     LocalDb(Context context) {
         super(context, DB_NAME, null, DB_VERSION);
@@ -33,6 +33,12 @@ final class LocalDb extends SQLiteOpenHelper {
                 "private INTEGER NOT NULL DEFAULT 0," +
                 "display_followers INTEGER NOT NULL DEFAULT -1," +
                 "display_following INTEGER NOT NULL DEFAULT -1," +
+                "website TEXT NOT NULL DEFAULT ''," +
+                "location TEXT NOT NULL DEFAULT ''," +
+                "birth_date TEXT NOT NULL DEFAULT ''," +
+                "is_bot INTEGER NOT NULL DEFAULT 0," +
+                "bot_next_at INTEGER NOT NULL DEFAULT 0," +
+                "bot_persona TEXT NOT NULL DEFAULT ''," +
                 "created_at INTEGER NOT NULL)");
 
         db.execSQL("CREATE TABLE follows (" +
@@ -79,6 +85,15 @@ final class LocalDb extends SQLiteOpenHelper {
                 "body TEXT NOT NULL," +
                 "created_at INTEGER NOT NULL)");
 
+        db.execSQL("CREATE TABLE drafts (" +
+                "id INTEGER PRIMARY KEY AUTOINCREMENT," +
+                "author_id INTEGER NOT NULL," +
+                "body TEXT NOT NULL DEFAULT ''," +
+                "media_path TEXT," +
+                "reply_to INTEGER," +
+                "quote_of INTEGER," +
+                "created_at INTEGER NOT NULL)");
+
         seed(db);
     }
 
@@ -102,13 +117,22 @@ final class LocalDb extends SQLiteOpenHelper {
 
     @Override
     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-        db.execSQL("DROP TABLE IF EXISTS messages");
-        db.execSQL("DROP TABLE IF EXISTS notifications");
-        db.execSQL("DROP TABLE IF EXISTS interactions");
-        db.execSQL("DROP TABLE IF EXISTS posts");
-        db.execSQL("DROP TABLE IF EXISTS follows");
-        db.execSQL("DROP TABLE IF EXISTS accounts");
-        onCreate(db);
+        if (oldVersion < 2) {
+            db.execSQL("ALTER TABLE accounts ADD COLUMN website TEXT NOT NULL DEFAULT ''");
+            db.execSQL("ALTER TABLE accounts ADD COLUMN location TEXT NOT NULL DEFAULT ''");
+            db.execSQL("ALTER TABLE accounts ADD COLUMN birth_date TEXT NOT NULL DEFAULT ''");
+            db.execSQL("ALTER TABLE accounts ADD COLUMN is_bot INTEGER NOT NULL DEFAULT 0");
+            db.execSQL("ALTER TABLE accounts ADD COLUMN bot_next_at INTEGER NOT NULL DEFAULT 0");
+            db.execSQL("ALTER TABLE accounts ADD COLUMN bot_persona TEXT NOT NULL DEFAULT ''");
+            db.execSQL("CREATE TABLE IF NOT EXISTS drafts (" +
+                    "id INTEGER PRIMARY KEY AUTOINCREMENT," +
+                    "author_id INTEGER NOT NULL," +
+                    "body TEXT NOT NULL DEFAULT ''," +
+                    "media_path TEXT," +
+                    "reply_to INTEGER," +
+                    "quote_of INTEGER," +
+                    "created_at INTEGER NOT NULL)");
+        }
     }
 
     private long insertAccount(SQLiteDatabase db, String name, String handle, String bio, int color, boolean verified, boolean priv) {
