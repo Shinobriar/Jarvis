@@ -872,20 +872,45 @@ public class MainActivity extends Activity {
             info.addView(bio);
         }
 
-        TextView joined = tv("Joined this local universe", 15, pal.secondary, false);
-        joined.setPadding(0, dp(3), 0, dp(10));
-        info.addView(joined);
+        LinearLayout metadata = vbox();
+        metadata.setPadding(0, dp(1), 0, dp(8));
+
+        if (a.location != null && !a.location.trim().isEmpty()) {
+            metadata.addView(profileMetaRow(XUi.IconView.LOCATION, a.location.trim(), pal.secondary));
+        }
+        if (a.website != null && !a.website.trim().isEmpty()) {
+            metadata.addView(profileMetaRow(XUi.IconView.LINK, a.website.trim(), XUi.BLUE));
+        }
+        if (a.birthDate != null && !a.birthDate.trim().isEmpty()) {
+            metadata.addView(profileMetaRow(XUi.IconView.BALLOON, "Born " + a.birthDate.trim(), pal.secondary));
+        }
+        long joinedAt = a.createdAt > 0 ? a.createdAt : System.currentTimeMillis();
+        String joinedText = "Joined " + new SimpleDateFormat("MMMM yyyy", Locale.US).format(new Date(joinedAt));
+        metadata.addView(profileMetaRow(XUi.IconView.CALENDAR, joinedText, pal.secondary));
+        info.addView(metadata);
 
         LinearLayout stats = hbox();
         long following = a.displayFollowing >= 0 ? a.displayFollowing : db.actualFollowing(a.id);
         long followers = a.displayFollowers >= 0 ? a.displayFollowers : db.actualFollowers(a.id);
-        TextView f1 = tv(formatCount(following) + " ", 14, pal.fg, true);
-        stats.addView(f1);
-        stats.addView(tv("Following", 14, pal.secondary, false));
+
+        LinearLayout followingGroup = hbox();
+        followingGroup.addView(tv(formatCount(following) + " ", 14, pal.fg, true));
+        followingGroup.addView(tv("Following", 14, pal.secondary, false));
+        if (accountId == currentAccountId) {
+            followingGroup.setClickable(true);
+            followingGroup.setOnClickListener(v -> renderFollowList(accountId, true));
+        }
+        stats.addView(followingGroup);
         stats.addView(space(18, 1));
-        TextView f2 = tv(formatCount(followers) + " ", 14, pal.fg, true);
-        stats.addView(f2);
-        stats.addView(tv("Followers", 14, pal.secondary, false));
+
+        LinearLayout followerGroup = hbox();
+        followerGroup.addView(tv(formatCount(followers) + " ", 14, pal.fg, true));
+        followerGroup.addView(tv("Followers", 14, pal.secondary, false));
+        if (accountId == currentAccountId) {
+            followerGroup.setClickable(true);
+            followerGroup.setOnClickListener(v -> renderFollowList(accountId, false));
+        }
+        stats.addView(followerGroup);
         info.addView(stats);
 
         LinearLayout tabs = hbox();
@@ -924,6 +949,54 @@ public class MainActivity extends Activity {
         shell.addView(bottomNav(accountId == currentAccountId ? SCREEN_PROFILE : 0));
         addComposeFab(frame);
         setScreen(frame);
+    }
+
+    private View profileMetaRow(int iconType, String text, int textColor) {
+        LinearLayout row = hbox();
+        row.setPadding(0, dp(3), 0, dp(3));
+        XUi.IconView icon = new XUi.IconView(this, iconType, pal.secondary);
+        LinearLayout.LayoutParams ip = new LinearLayout.LayoutParams(dp(19), dp(19));
+        ip.setMargins(0, 0, dp(5), 0);
+        icon.setLayoutParams(ip);
+        icon.setPadding(dp(1), dp(1), dp(1), dp(1));
+        row.addView(icon);
+        TextView label = tv(text, 15, textColor, false);
+        row.addView(label);
+        return row;
+    }
+
+    private void renderFollowList(long accountId, boolean followingList) {
+        if (accountId != currentAccountId) {
+            Toast.makeText(this, "Follow lists are available for the account you're currently using", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        currentScreen = SCREEN_FOLLOW_LIST;
+        currentProfileId = accountId;
+
+        LinearLayout shell = vbox();
+        shell.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        shell.addView(topBar(followingList ? "Following" : "Followers", true));
+        shell.addView(XUi.divider(this, pal.border));
+
+        LinearLayout list = vbox();
+        List<Account> accounts = followingList ? db.followingAccounts(accountId) : db.followerAccounts(accountId);
+        int visible = 0;
+        for (Account item : accounts) {
+            if (!db.canSeeAccount(currentAccountId, item.id)) continue;
+            visible++;
+            list.addView(accountRow(item));
+            list.addView(XUi.divider(this, pal.border));
+        }
+        if (visible == 0) {
+            list.addView(emptyState(followingList ? "Not following anyone yet" : "No followers yet",
+                    "This list reflects the real local follow graph, not the displayed fake count."));
+        }
+
+        ScrollView scroll = scrollOf(list);
+        scroll.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        shell.addView(scroll);
+        shell.addView(bottomNav(0));
+        setScreen(shell);
     }
 
     private void renderSearch() {
