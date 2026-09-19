@@ -148,7 +148,9 @@ final class XUi {
         static final int HOME=1, SEARCH=2, BELL=3, MAIL=4, REPLY=5, REPOST=6,
                 HEART=7, VIEWS=8, BOOKMARK=9, SHARE=10, MORE=11, BACK=12,
                 PHOTO=13, CLOSE=14, CHECK=15, PLUS=16, XLOGO=17, COMPOSE=18,
-                VERIFIED=19, PROFILE=20;
+                VERIFIED=19, PROFILE=20, GLOBE=21, CAMERA=22, GIF=23, POLL=24,
+                LOCATION=25, SCHEDULE=26, PLUS_CIRCLE=27, CALENDAR=28, LINK=29,
+                DRAFTS=30, SETTINGS=31;
 
         private final int type;
         private int color;
@@ -188,6 +190,17 @@ final class XUi {
                 case COMPOSE: return R.drawable.ic_vector_compose;
                 case VERIFIED: return R.drawable.ic_vector_verified;
                 case XLOGO: return R.drawable.ic_vector_x;
+                case GLOBE: return R.drawable.ic_vector_globe_stroke;
+                case CAMERA: return R.drawable.ic_vector_camera;
+                case GIF: return R.drawable.ic_vector_gif_compose;
+                case POLL: return R.drawable.ic_vector_bulleted_list;
+                case LOCATION: return R.drawable.ic_vector_location_stroke;
+                case SCHEDULE: return R.drawable.ic_vector_schedule;
+                case PLUS_CIRCLE: return R.drawable.ic_vector_plus_circle_fill;
+                case CALENDAR: return R.drawable.ic_vector_calendar;
+                case LINK: return R.drawable.ic_vector_link;
+                case DRAFTS: return R.drawable.ic_vector_drafts;
+                case SETTINGS: return R.drawable.ic_vector_settings_stroke;
                 default: return R.drawable.ic_vector_x;
             }
         }
