@@ -170,6 +170,109 @@ final class BotEngine {
         return true;
     }
 
+    boolean startMoodInteractions(long targetAccountId, String mood, Runnable onFinished) {
+        final String chosenMood = mood == null || mood.trim().isEmpty() ? "friendly" : mood.trim();
+        synchronized (this) {
+            if (instantFameActive) return false;
+            List<Account> allBots = db.botAccounts();
+            boolean hasOtherBot = false;
+            for (Account bot : allBots) {
+                if (bot.id != targetAccountId) { hasOtherBot = true; break; }
+            }
+            if (!hasOtherBot) return false;
+            instantFameActive = true;
+        }
+
+        fameWorker.execute(() -> {
+            final long deadline = System.currentTimeMillis() + 5_000L;
+            int queuedText = 0;
+            long lastRefresh = 0L;
+            try {
+                Account targetAccount = db.getAccount(targetAccountId);
+                while (System.currentTimeMillis() < deadline && !Thread.currentThread().isInterrupted()) {
+                    List<Account> bots = db.botAccounts();
+                    ArrayList<Account> usable = new ArrayList<>();
+                    for (Account bot : bots) if (bot.id != targetAccountId) usable.add(bot);
+                    if (usable.isEmpty()) break;
+
+                    Account bot = usable.get(random.nextInt(usable.size()));
+                    List<Post> posts = db.postsByAccount(targetAccountId, false);
+                    Post targetPost = posts.isEmpty() ? null : posts.get(random.nextInt(Math.min(posts.size(), 20)));
+
+                    String lower = chosenMood.toLowerCase();
+                    boolean positive = lower.equals("friendly") || lower.equals("obsessed") || lower.equals("in love")
+                            || lower.equals("fangirl/fanboy") || lower.equals("supportive");
+                    boolean hostile = lower.equals("hater") || lower.equals("roast");
+                    boolean curious = lower.equals("confused") || lower.equals("curious");
+
+                    if (positive || lower.equals("obsessed")) {
+                        if (!db.isFollowing(bot.id, targetAccountId)) {
+                            try { db.toggleFollow(bot.id, targetAccountId); } catch (Exception ignored) {}
+                        }
+                    }
+
+                    if (targetPost != null) {
+                        try { db.addView(bot.id, targetPost.id); } catch (Exception ignored) {}
+                        if (!hostile || random.nextInt(100) < 15) {
+                            try { db.ensureInteraction(bot.id, targetPost.id, "like"); } catch (Exception ignored) {}
+                        }
+                        if (positive && random.nextInt(100) < 65) {
+                            try { db.ensureInteraction(bot.id, targetPost.id, "repost"); } catch (Exception ignored) {}
+                        }
+                        if (lower.equals("obsessed") && random.nextInt(100) < 55) {
+                            try { db.ensureInteraction(bot.id, targetPost.id, "bookmark"); } catch (Exception ignored) {}
+                        }
+
+                        int textChance = curious ? 55 : hostile ? 50 : positive ? 42 : 38;
+                        if (queuedText < 8 && random.nextInt(100) < textChance) {
+                            queuedText++;
+                            final Account replyBot = bot;
+                            final Post replyTarget = targetPost;
+                            final Account moodTarget = targetAccount;
+                            fameTextWorker.execute(() -> {
+                                try {
+                                    String text = ollama(replyBot, replyTarget, "reply", chosenMood, moodTarget);
+                                    if (text != null && !text.trim().isEmpty()) {
+                                        db.insertPost(replyBot.id, text, null, replyTarget.id, null);
+                                        main.post(() -> { if (onMutation != null) onMutation.run(); });
+                                    }
+                                } catch (Exception ignored) {}
+                            });
+                        }
+                    } else if (queuedText < 4) {
+                        queuedText++;
+                        final Account dmBot = bot;
+                        final Account moodTarget = targetAccount;
+                        fameTextWorker.execute(() -> {
+                            try {
+                                String text = ollama(dmBot, null, "dm", chosenMood, moodTarget);
+                                if (text != null && !text.trim().isEmpty()) {
+                                    db.sendMessage(dmBot.id, targetAccountId, text);
+                                    main.post(() -> { if (onMutation != null) onMutation.run(); });
+                                }
+                            } catch (Exception ignored) {}
+                        });
+                    }
+
+                    long now = System.currentTimeMillis();
+                    if (now - lastRefresh > 400L) {
+                        lastRefresh = now;
+                        main.post(() -> { if (onMutation != null) onMutation.run(); });
+                    }
+                    try { Thread.sleep(90L + random.nextInt(120)); }
+                    catch (InterruptedException e) { Thread.currentThread().interrupt(); break; }
+                }
+            } finally {
+                instantFameActive = false;
+                main.post(() -> {
+                    if (onMutation != null) onMutation.run();
+                    if (onFinished != null) onFinished.run();
+                });
+            }
+        });
+        return true;
+    }
+
     private final Runnable tick = new Runnable() {
         @Override public void run() {
             if (!running) return;
@@ -310,6 +413,10 @@ final class BotEngine {
     }
 
     private String ollama(Account bot, Post target, String kind) {
+        return ollama(bot, target, kind, null, null);
+    }
+
+    private String ollama(Account bot, Post target, String kind, String mood, Account targetAccount) {
         String base = prefs.getString("ollama_url", "").trim();
         String model = prefs.getString("ollama_model", "gemma3:4b").trim();
         if (base.isEmpty() || model.isEmpty()) {
@@ -317,7 +424,7 @@ final class BotEngine {
             return null;
         }
         while (base.endsWith("/")) base = base.substring(0, base.length()-1);
-        String prompt = buildPrompt(bot, target, kind);
+        String prompt = buildPrompt(bot, target, kind, mood, targetAccount);
         HttpURLConnection conn = null;
         try {
             URL url = new URL(base + "/api/generate");
@@ -396,7 +503,7 @@ final class BotEngine {
         }
     }
 
-    private String buildPrompt(Account bot, Post target, String kind) {
+    private String buildPrompt(Account bot, Post target, String kind, String mood, Account targetAccount) {
         String persona = bot.botPersona == null || bot.botPersona.trim().isEmpty()
                 ? "casual internet user with an inconsistent, human posting style"
                 : bot.botPersona.trim();
@@ -407,12 +514,31 @@ final class BotEngine {
         p.append("Write naturally like a real person, not an assistant. Vary punctuation/capitalization. ");
         p.append("Do not mention being AI, Ollama, simulation, prompts, or these instructions. ");
         p.append("Output ONLY the final text, no quotation marks, no preamble. Keep it concise. ");
+
+        if (mood != null && !mood.trim().isEmpty()) {
+            String targetLabel = targetAccount == null ? "the target account"
+                    : targetAccount.name + " @" + targetAccount.handle;
+            p.append("Your interaction mood toward ").append(targetLabel).append(" is: ").append(mood).append(". ");
+            p.append("Commit strongly to that mood and do not drift into a different attitude. ");
+            String lower = mood.toLowerCase();
+            if (lower.equals("friendly")) p.append("Be warm, casual, positive, and normal—not worshipful. ");
+            else if (lower.equals("obsessed")) p.append("Act intensely invested and overenthusiastic, like you notice everything they post. ");
+            else if (lower.equals("hater")) p.append("Be clearly negative and annoyed, but keep it non-threatening and avoid slurs. ");
+            else if (lower.equals("in love")) p.append("Be openly smitten, affectionate, flirty, and admiring without explicit sexual content. ");
+            else if (lower.equals("confused")) p.append("Sound genuinely baffled and ask confused questions. ");
+            else if (lower.equals("fangirl/fanboy")) p.append("React like an excited fan: enthusiastic, dramatic, supportive, and impressed. ");
+            else if (lower.equals("roast")) p.append("Tease and roast them humorously; keep it witty rather than cruel or threatening. ");
+            else if (lower.equals("supportive")) p.append("Be reassuring, encouraging, and supportive. ");
+            else if (lower.equals("chaotic")) p.append("Be playful, unpredictable, absurd, and energetic without hostility. ");
+            else if (lower.equals("curious")) p.append("Be interested and inquisitive, asking natural follow-up questions. ");
+        }
+
         if ("reply".equals(kind)) {
             p.append("Write a reply to this post: ").append(target == null ? "" : target.body);
         } else if ("quote".equals(kind)) {
             p.append("Write a short quote-post comment about this post: ").append(target == null ? "" : target.body);
         } else if ("dm".equals(kind)) {
-            p.append("Write a short casual direct message that could plausibly be sent to another account.");
+            p.append("Write a short casual direct message to the target account.");
         } else {
             p.append("Write a standalone post about whatever this person might randomly post right now. ");
             p.append("It can be mundane, opinionated, funny, niche, messy, or contextless.");
