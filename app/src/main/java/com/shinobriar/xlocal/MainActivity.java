@@ -1643,6 +1643,84 @@ public class MainActivity extends Activity {
             scrollBody.addView(mediaWrap);
         }
 
+        if (composePollOptions.size() >= 2) {
+            LinearLayout pollPreview = vbox();
+            LinearLayout.LayoutParams pp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            pp.setMargins(dp(56), 0, dp(4), dp(10));
+            pollPreview.setLayoutParams(pp);
+            pollPreview.setPadding(dp(10), dp(8), dp(10), dp(8));
+            pollPreview.setBackground(XUi.stroked(Color.TRANSPARENT, pal.border, 14, this));
+            for (String option : composePollOptions) {
+                TextView optionView = tv(option, 14, pal.fg, false);
+                optionView.setPadding(dp(10), dp(8), dp(10), dp(8));
+                LinearLayout.LayoutParams op = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                op.setMargins(0, dp(3), 0, dp(3));
+                optionView.setLayoutParams(op);
+                optionView.setBackground(XUi.stroked(Color.TRANSPARENT, XUi.BLUE, 999, this));
+                pollPreview.addView(optionView);
+            }
+            TextView editPoll = tv("Edit poll", 13, XUi.BLUE, true);
+            editPoll.setPadding(dp(4), dp(6), 0, 0);
+            editPoll.setOnClickListener(v -> {
+                composeDraft = body.getText().toString();
+                d.dismiss();
+                showPollComposer(replyTo, quoteOf);
+            });
+            pollPreview.addView(editPoll);
+            scrollBody.addView(pollPreview);
+        }
+
+        if (composeLocation != null && !composeLocation.trim().isEmpty()) {
+            LinearLayout locRow = hbox();
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(38));
+            lp.setMargins(dp(56), 0, dp(4), dp(7));
+            locRow.setLayoutParams(lp);
+            XUi.IconView locIcon = new XUi.IconView(this, XUi.IconView.LOCATION, XUi.BLUE);
+            locIcon.setLayoutParams(new LinearLayout.LayoutParams(dp(20), dp(20)));
+            locIcon.setPadding(dp(2), dp(2), dp(2), dp(2));
+            locRow.addView(locIcon);
+            TextView locText = tv("  " + composeLocation, 14, XUi.BLUE, false);
+            locText.setLayoutParams(new LinearLayout.LayoutParams(0, dp(38), 1f));
+            locRow.addView(locText);
+            XUi.IconView clearLocation = new XUi.IconView(this, XUi.IconView.CLOSE, pal.secondary);
+            clearLocation.setLayoutParams(new LinearLayout.LayoutParams(dp(30), dp(30)));
+            clearLocation.setPadding(dp(8), dp(8), dp(8), dp(8));
+            clearLocation.setOnClickListener(v -> {
+                composeDraft = body.getText().toString();
+                composeLocation = "";
+                d.dismiss();
+                showComposer(replyTo, quoteOf);
+            });
+            locRow.addView(clearLocation);
+            scrollBody.addView(locRow);
+        }
+
+        if (composeScheduledAt > System.currentTimeMillis()) {
+            LinearLayout scheduledRow = hbox();
+            LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(38));
+            sp.setMargins(dp(56), 0, dp(4), dp(7));
+            scheduledRow.setLayoutParams(sp);
+            XUi.IconView scheduleIcon = new XUi.IconView(this, XUi.IconView.SCHEDULE, XUi.BLUE);
+            scheduleIcon.setLayoutParams(new LinearLayout.LayoutParams(dp(20), dp(20)));
+            scheduleIcon.setPadding(dp(2), dp(2), dp(2), dp(2));
+            scheduledRow.addView(scheduleIcon);
+            String when = new SimpleDateFormat("MMM d, yyyy · HH:mm", Locale.getDefault()).format(new Date(composeScheduledAt));
+            TextView scheduledText = tv("  Scheduled for " + when, 14, XUi.BLUE, false);
+            scheduledText.setLayoutParams(new LinearLayout.LayoutParams(0, dp(38), 1f));
+            scheduledRow.addView(scheduledText);
+            XUi.IconView clearSchedule = new XUi.IconView(this, XUi.IconView.CLOSE, pal.secondary);
+            clearSchedule.setLayoutParams(new LinearLayout.LayoutParams(dp(30), dp(30)));
+            clearSchedule.setPadding(dp(8), dp(8), dp(8), dp(8));
+            clearSchedule.setOnClickListener(v -> {
+                composeDraft = body.getText().toString();
+                composeScheduledAt = 0L;
+                d.dismiss();
+                showComposer(replyTo, quoteOf);
+            });
+            scheduledRow.addView(clearSchedule);
+            scrollBody.addView(scheduledRow);
+        }
+
         if (quoteOf != null) {
             Post q = db.getPost(quoteOf);
             if (q != null) {
@@ -1686,23 +1764,43 @@ public class MainActivity extends Activity {
         tools.addView(photo);
 
         XUi.IconView camera = composerTool(XUi.IconView.CAMERA);
-        camera.setOnClickListener(v -> Toast.makeText(this, "Use the image picker to add a camera photo", Toast.LENGTH_SHORT).show());
+        camera.setOnClickListener(v -> {
+            composeDraft = body.getText().toString();
+            d.dismiss();
+            takeCameraPhoto();
+        });
         tools.addView(camera);
 
         XUi.IconView gif = composerTool(XUi.IconView.GIF);
-        gif.setOnClickListener(v -> Toast.makeText(this, "GIF picker is visual-only in the local simulator", Toast.LENGTH_SHORT).show());
+        gif.setOnClickListener(v -> {
+            composeDraft = body.getText().toString();
+            d.dismiss();
+            pickGif();
+        });
         tools.addView(gif);
 
         XUi.IconView poll = composerTool(XUi.IconView.POLL);
-        poll.setOnClickListener(v -> Toast.makeText(this, "Poll composer isn't implemented yet", Toast.LENGTH_SHORT).show());
+        poll.setOnClickListener(v -> {
+            composeDraft = body.getText().toString();
+            d.dismiss();
+            showPollComposer(replyTo, quoteOf);
+        });
         tools.addView(poll);
 
         XUi.IconView location = composerTool(XUi.IconView.LOCATION);
-        location.setOnClickListener(v -> Toast.makeText(this, "Location attachment isn't used by this local simulator", Toast.LENGTH_SHORT).show());
+        location.setOnClickListener(v -> {
+            composeDraft = body.getText().toString();
+            d.dismiss();
+            showLocationComposer(replyTo, quoteOf);
+        });
         tools.addView(location);
 
         XUi.IconView schedule = composerTool(XUi.IconView.SCHEDULE);
-        schedule.setOnClickListener(v -> Toast.makeText(this, "Scheduled posts aren't enabled yet", Toast.LENGTH_SHORT).show());
+        schedule.setOnClickListener(v -> {
+            composeDraft = body.getText().toString();
+            d.dismiss();
+            showScheduleComposer(replyTo, quoteOf);
+        });
         tools.addView(schedule);
 
         XUi.IconView plus = composerTool(XUi.IconView.PLUS_CIRCLE);
