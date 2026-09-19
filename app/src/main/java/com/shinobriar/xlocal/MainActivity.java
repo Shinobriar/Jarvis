@@ -1308,72 +1308,153 @@ public class MainActivity extends Activity {
     private void showAccountSwitcher() {
         Dialog d = new Dialog(this);
         d.requestWindowFeature(Window.FEATURE_NO_TITLE);
-        LinearLayout root = vbox();
-        root.setPadding(dp(16), dp(14), dp(16), dp(18));
 
-        TextView title = tv("Accounts", 22, pal.fg, true);
-        title.setPadding(0, 0, 0, dp(10));
-        root.addView(title);
+        LinearLayout root = vbox();
+        root.setPadding(dp(18), dp(26), dp(18), dp(22));
+
+        Account me = account(currentAccountId);
+        if (me == null) return;
+
+        LinearLayout avatarRow = hbox();
+        XUi.AvatarView avatar = new XUi.AvatarView(this, me);
+        avatar.setLayoutParams(new LinearLayout.LayoutParams(dp(56), dp(56)));
+        avatar.setOnClickListener(v -> { d.dismiss(); renderProfile(currentAccountId); });
+        avatarRow.addView(avatar);
+        Space aflex = new Space(this);
+        aflex.setLayoutParams(new LinearLayout.LayoutParams(0, 1, 1f));
+        avatarRow.addView(aflex);
+        XUi.IconView more = new XUi.IconView(this, XUi.IconView.MORE, pal.fg);
+        more.setLayoutParams(new LinearLayout.LayoutParams(dp(42), dp(42)));
+        more.setPadding(dp(8), dp(8), dp(8), dp(8));
+        more.setOnClickListener(v -> showEditAccount(currentAccountId));
+        avatarRow.addView(more);
+        root.addView(avatarRow);
+
+        LinearLayout nameRow = hbox();
+        nameRow.setPadding(0, dp(18), 0, 0);
+        nameRow.addView(tv(me.name, 23, pal.fg, true));
+        if (me.verified) nameRow.addView(verifiedBadge(19));
+        root.addView(nameRow);
+        TextView handle = tv("@" + me.handle, 15, pal.secondary, false);
+        handle.setPadding(0, dp(3), 0, dp(14));
+        root.addView(handle);
+
+        LinearLayout stats = hbox();
+        long following = me.displayFollowing >= 0 ? me.displayFollowing : db.actualFollowing(me.id);
+        long followers = me.displayFollowers >= 0 ? me.displayFollowers : db.actualFollowers(me.id);
+        TextView followingText = tv(formatCount(following) + " Following", 15, pal.secondary, false);
+        followingText.setPadding(0, 0, dp(18), 0);
+        followingText.setOnClickListener(v -> { d.dismiss(); renderFollowList(me.id, true); });
+        stats.addView(followingText);
+        TextView followerText = tv(formatCount(followers) + " Followers", 15, pal.secondary, false);
+        followerText.setOnClickListener(v -> { d.dismiss(); renderFollowList(me.id, false); });
+        stats.addView(followerText);
+        root.addView(stats);
+
+        View divider = XUi.divider(this, pal.border);
+        LinearLayout.LayoutParams divp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1));
+        divp.setMargins(0, dp(20), 0, dp(9));
+        divider.setLayoutParams(divp);
+        root.addView(divider);
+
+        root.addView(drawerAction(XUi.IconView.PROFILE, "Profile", () -> { d.dismiss(); renderProfile(currentAccountId); }));
+        root.addView(drawerAction(XUi.IconView.BOOKMARK, "Bookmarks", () -> { d.dismiss(); renderBookmarks(); }));
+        root.addView(drawerAction(XUi.IconView.DRAFTS, "Drafts", () -> { d.dismiss(); renderDrafts(); }));
+
+        LinearLayout accountsBox = vbox();
+        accountsBox.setVisibility(View.GONE);
+        TextView switcher = (TextView) drawerActionText("Switch accounts", () -> {
+            accountsBox.setVisibility(accountsBox.getVisibility() == View.VISIBLE ? View.GONE : View.VISIBLE);
+        });
+        root.addView(switcher);
+        root.addView(accountsBox);
 
         for (Account a : db.listAccounts()) {
             LinearLayout row = hbox();
-            row.setPadding(0, dp(6), 0, dp(6));
+            row.setPadding(dp(6), dp(7), dp(4), dp(7));
             XUi.AvatarView av = new XUi.AvatarView(this, a);
-            LinearLayout.LayoutParams ap = new LinearLayout.LayoutParams(dp(43), dp(43));
+            LinearLayout.LayoutParams ap = new LinearLayout.LayoutParams(dp(38), dp(38));
             ap.setMargins(0, 0, dp(10), 0);
             av.setLayoutParams(ap);
             row.addView(av);
             LinearLayout labels = vbox();
             labels.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-            LinearLayout accountNameRow = hbox();
-            accountNameRow.addView(tv(a.name, 15, pal.fg, true));
-            if (a.verified) accountNameRow.addView(verifiedBadge(16));
-            labels.addView(accountNameRow);
-            labels.addView(tv("@" + a.handle, 14, pal.secondary, false));
+            LinearLayout nr = hbox();
+            nr.addView(tv(a.name, 15, pal.fg, true));
+            if (a.verified) nr.addView(verifiedBadge(15));
+            labels.addView(nr);
+            labels.addView(tv("@" + a.handle, 13, pal.secondary, false));
             row.addView(labels);
             if (a.id == currentAccountId) {
-                XUi.IconView selectedCheck = new XUi.IconView(this, XUi.IconView.CHECK, XUi.BLUE);
-                selectedCheck.setLayoutParams(new LinearLayout.LayoutParams(dp(24), dp(24)));
-                selectedCheck.setPadding(dp(2), dp(2), dp(2), dp(2));
-                row.addView(selectedCheck);
+                XUi.IconView check = new XUi.IconView(this, XUi.IconView.CHECK, XUi.BLUE);
+                check.setLayoutParams(new LinearLayout.LayoutParams(dp(22), dp(22)));
+                row.addView(check);
             }
             row.setOnClickListener(v -> {
                 currentAccountId = a.id;
                 prefs.edit().putLong("current_account", currentAccountId).apply();
+                clearAccountCache();
                 d.dismiss();
                 renderHome();
             });
             row.setOnLongClickListener(v -> { d.dismiss(); showEditAccount(a.id); return true; });
-            root.addView(row);
+            accountsBox.addView(row);
         }
 
-        root.addView(XUi.divider(this, pal.border));
-        root.addView(menuLine("Create a new account", () -> { d.dismiss(); showCreateAccount(); }));
-        root.addView(menuLine("Bookmarks", () -> { d.dismiss(); renderBookmarks(); }));
+        root.addView(drawerAction(XUi.IconView.PLUS, "Create account", () -> { d.dismiss(); showCreateAccount(); }));
+        root.addView(drawerAction(XUi.IconView.PROFILE, "Generate random accounts", () -> { d.dismiss(); showRandomAccountGenerator(); }));
+        root.addView(drawerAction(XUi.IconView.SETTINGS, "Bot settings", () -> { d.dismiss(); showBotSettings(); }));
+
+        View divider2 = XUi.divider(this, pal.border);
+        LinearLayout.LayoutParams divp2 = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1));
+        divp2.setMargins(0, dp(10), 0, dp(4));
+        divider2.setLayoutParams(divp2);
+        root.addView(divider2);
+
         root.addView(menuLine("Appearance", () -> { d.dismiss(); showAppearance(); }));
         root.addView(menuLine("Export universe", () -> { d.dismiss(); exportUniversePicker(); }));
         root.addView(menuLine("Import universe", () -> { d.dismiss(); importUniversePicker(); }));
-        root.addView(menuLine("Reset demo universe", () -> {
-            d.dismiss();
-            confirmReset();
-        }));
+        root.addView(menuLine("Reset demo universe", () -> { d.dismiss(); confirmReset(); }));
 
         ScrollView scroll = scrollOf(root);
         d.setContentView(scroll);
+        d.show();
         Window w = d.getWindow();
         if (w != null) {
             w.setBackgroundDrawable(new ColorDrawable(pal.bg));
-            w.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.WRAP_CONTENT);
-            w.setGravity(Gravity.BOTTOM);
+            WindowManager.LayoutParams lp = new WindowManager.LayoutParams();
+            lp.copyFrom(w.getAttributes());
+            lp.width = (int)(getResources().getDisplayMetrics().widthPixels * 0.88f);
+            lp.height = WindowManager.LayoutParams.MATCH_PARENT;
+            lp.gravity = Gravity.START;
+            lp.dimAmount = 0.45f;
+            w.setAttributes(lp);
+            w.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
         }
-        d.setOnShowListener(x -> {
-            Window ww = d.getWindow();
-            if (ww != null) {
-                ww.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.WRAP_CONTENT);
-                ww.setGravity(Gravity.BOTTOM);
-            }
-        });
-        d.show();
+        root.setTranslationX(-getResources().getDisplayMetrics().widthPixels * 0.88f);
+        root.animate().translationX(0).setDuration(190).start();
+    }
+
+    private View drawerAction(int icon, String text, Runnable action) {
+        LinearLayout row = hbox();
+        row.setPadding(dp(4), dp(13), dp(4), dp(13));
+        XUi.IconView iv = new XUi.IconView(this, icon, pal.fg);
+        LinearLayout.LayoutParams ip = new LinearLayout.LayoutParams(dp(28), dp(28));
+        ip.setMargins(0, 0, dp(18), 0);
+        iv.setLayoutParams(ip);
+        iv.setPadding(dp(2), dp(2), dp(2), dp(2));
+        row.addView(iv);
+        TextView label = tv(text, 19, pal.fg, true);
+        row.addView(label);
+        row.setOnClickListener(v -> action.run());
+        return row;
+    }
+
+    private View drawerActionText(String text, Runnable action) {
+        TextView row = tv(text, 16, pal.fg, true);
+        row.setPadding(dp(4), dp(13), dp(4), dp(13));
+        row.setOnClickListener(v -> action.run());
+        return row;
     }
 
     private View menuLine(String text, Runnable action) {
