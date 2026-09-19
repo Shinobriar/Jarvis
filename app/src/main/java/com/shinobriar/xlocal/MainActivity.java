@@ -549,6 +549,8 @@ public class MainActivity extends Activity {
     }
 
     private View postView(Post p, boolean detail) {
+        if (detail) return detailPostView(p);
+
         Account a = account(p.authorId);
         if (a == null || !db.canSeeAccount(currentAccountId, a.id)) return new View(this);
 
@@ -574,6 +576,8 @@ public class MainActivity extends Activity {
 
         LinearLayout content = vbox();
         content.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        content.setClickable(true);
+        content.setOnClickListener(v -> renderPost(p.id));
 
         if (p.replyTo != null) {
             Post parent = db.getPost(p.replyTo);
@@ -613,6 +617,7 @@ public class MainActivity extends Activity {
             applyMentionLinks(body, p.body);
             body.setTextIsSelectable(false);
             body.setLineSpacing(0, 1.08f);
+            body.setOnClickListener(v -> renderPost(p.id));
             body.setPadding(0, dp(2), dp(4), dp(7));
             content.addView(body);
         }
@@ -624,7 +629,8 @@ public class MainActivity extends Activity {
             image.setBackground(XUi.rounded(pal.surface, 14, this));
             image.setClipToOutline(true);
             image.setOutlineProvider(ViewOutlineProvider.BACKGROUND);
-            LinearLayout.LayoutParams ip = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(detail ? 330 : 260));
+            image.setOnClickListener(v -> renderPost(p.id));
+            LinearLayout.LayoutParams ip = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(260));
             ip.setMargins(0, dp(4), dp(4), dp(7));
             image.setLayoutParams(ip);
             content.addView(image);
@@ -650,11 +656,134 @@ public class MainActivity extends Activity {
             String who = reposter == null ? "Reposted" : reposter.name + " reposted";
             TextView label = tv("  " + who, 13, pal.secondary, true);
             repostHeader.addView(label);
+            repostHeader.setOnClickListener(v -> renderPost(p.id));
             outer.addView(repostHeader);
             outer.addView(row);
             return outer;
         }
         return row;
+    }
+
+    private View detailPostView(Post p) {
+        Account a = account(p.authorId);
+        if (a == null || !db.canSeeAccount(currentAccountId, a.id)) return new View(this);
+
+        LinearLayout card = vbox();
+        card.setPadding(dp(16), dp(14), dp(16), dp(10));
+        card.setBackgroundColor(pal.bg);
+        card.setOnLongClickListener(v -> {
+            showDirectorMenu(p.id);
+            return true;
+        });
+
+        LinearLayout authorRow = hbox();
+        authorRow.setGravity(Gravity.CENTER_VERTICAL);
+
+        XUi.AvatarView avatar = new XUi.AvatarView(this, a);
+        LinearLayout.LayoutParams avatarLp = new LinearLayout.LayoutParams(dp(48), dp(48));
+        avatarLp.setMargins(0, 0, dp(10), 0);
+        avatar.setLayoutParams(avatarLp);
+        avatar.setOnClickListener(v -> renderProfile(a.id));
+        authorRow.addView(avatar);
+
+        LinearLayout identity = vbox();
+        identity.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        LinearLayout nameRow = hbox();
+        TextView name = tv(a.name, 16, pal.fg, true);
+        name.setOnClickListener(v -> renderProfile(a.id));
+        nameRow.addView(name);
+        if (a.verified) nameRow.addView(verifiedBadge(17));
+        identity.addView(nameRow);
+        TextView handle = tv("@" + a.handle, 15, pal.secondary, false);
+        handle.setOnClickListener(v -> renderProfile(a.id));
+        identity.addView(handle);
+        authorRow.addView(identity);
+
+        XUi.IconView more = new XUi.IconView(this, XUi.IconView.MORE, pal.secondary);
+        more.setLayoutParams(new LinearLayout.LayoutParams(dp(34), dp(34)));
+        more.setPadding(dp(7), dp(7), dp(7), dp(7));
+        more.setOnClickListener(v -> showPostMenu(p.id));
+        authorRow.addView(more);
+        card.addView(authorRow);
+
+        if (p.replyTo != null) {
+            Post parent = db.getPost(p.replyTo);
+            Account pa = parent == null ? null : account(parent.authorId);
+            if (pa != null && db.canSeeAccount(currentAccountId, pa.id)) {
+                TextView replying = tv("Replying to @" + pa.handle, 14, pal.secondary, false);
+                replying.setPadding(0, dp(10), 0, 0);
+                card.addView(replying);
+            }
+        }
+
+        if (p.body != null && !p.body.isEmpty()) {
+            TextView body = tv("", 21, pal.fg, false);
+            applyMentionLinks(body, p.body);
+            body.setLineSpacing(0, 1.08f);
+            body.setPadding(0, dp(14), 0, dp(12));
+            card.addView(body);
+        }
+
+        if (p.mediaPath != null && new File(p.mediaPath).exists()) {
+            ImageView image = new ImageView(this);
+            image.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            image.setImageBitmap(decodeScaled(p.mediaPath, 1400, 1000));
+            image.setBackground(XUi.rounded(pal.surface, 16, this));
+            image.setClipToOutline(true);
+            image.setOutlineProvider(ViewOutlineProvider.BACKGROUND);
+            LinearLayout.LayoutParams ip = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(340));
+            ip.setMargins(0, 0, 0, dp(12));
+            image.setLayoutParams(ip);
+            card.addView(image);
+        }
+
+        if (p.quoteOf != null) {
+            Post q = db.getPost(p.quoteOf);
+            if (q != null) card.addView(quotedPost(q));
+        }
+
+        String stamp = new SimpleDateFormat("HH:mm · MMM d, yy", Locale.US).format(new Date(p.createdAt));
+        TextView meta = tv(stamp + " · " + formatCount(p.views) + " Views", 14, pal.secondary, false);
+        meta.setPadding(0, dp(8), 0, dp(11));
+        card.addView(meta);
+        card.addView(XUi.divider(this, pal.border));
+        card.addView(detailActionRow(p));
+        return card;
+    }
+
+    private LinearLayout detailActionRow(Post p) {
+        LinearLayout actions = hbox();
+        actions.setGravity(Gravity.CENTER_VERTICAL);
+        actions.setPadding(0, dp(6), 0, dp(2));
+
+        actions.addView(actionItem(XUi.IconView.REPLY, p.replies, pal.secondary, false, v -> {
+            composeDraft = "";
+            composeMediaPath = null;
+            composeAuthorId = currentAccountId;
+            activeDraftId = -1;
+            showComposer(p.id, null);
+        }));
+
+        boolean reposted = db.hasInteraction(currentAccountId, p.id, "repost");
+        actions.addView(actionItem(XUi.IconView.REPOST, p.reposts, reposted ? XUi.GREEN : pal.secondary, reposted, v -> {
+            db.toggleInteraction(currentAccountId, p.id, "repost");
+            renderPost(p.id);
+        }));
+
+        boolean liked = db.hasInteraction(currentAccountId, p.id, "like");
+        actions.addView(actionItem(XUi.IconView.HEART, p.likes, liked ? XUi.PINK : pal.secondary, liked, v -> {
+            db.toggleInteraction(currentAccountId, p.id, "like");
+            renderPost(p.id);
+        }));
+
+        boolean bookmarked = db.hasInteraction(currentAccountId, p.id, "bookmark");
+        actions.addView(actionItem(XUi.IconView.BOOKMARK, p.bookmarks, bookmarked ? XUi.BLUE : pal.secondary, bookmarked, v -> {
+            db.toggleInteraction(currentAccountId, p.id, "bookmark");
+            renderPost(p.id);
+        }));
+
+        actions.addView(actionItem(XUi.IconView.SHARE, -1, pal.secondary, false, v -> showShareMenu(p.id)));
+        return actions;
     }
 
     private View quotedPost(Post q) {
@@ -722,16 +851,27 @@ public class MainActivity extends Activity {
     private View actionItem(int icon, long count, int color, boolean active, View.OnClickListener click) {
         LinearLayout item = hbox();
         item.setGravity(Gravity.CENTER_VERTICAL);
-        item.setLayoutParams(new LinearLayout.LayoutParams(0, dp(32), icon == XUi.IconView.SHARE || icon == XUi.IconView.BOOKMARK ? .7f : 1f));
+        float weight = (icon == XUi.IconView.SHARE || icon == XUi.IconView.BOOKMARK) ? .62f : 1f;
+        item.setLayoutParams(new LinearLayout.LayoutParams(0, dp(34), weight));
+
         XUi.IconView iv = new XUi.IconView(this, icon, color);
         iv.setActive(active);
-        iv.setLayoutParams(new LinearLayout.LayoutParams(dp(26), dp(26)));
-        iv.setPadding(dp(5), dp(5), dp(5), dp(5));
+        LinearLayout.LayoutParams iconLp = new LinearLayout.LayoutParams(dp(22), dp(22));
+        iconLp.setMargins(0, 0, count >= 0 ? dp(2) : 0, 0);
+        iv.setLayoutParams(iconLp);
+        iv.setPadding(dp(3), dp(3), dp(3), dp(3));
         item.addView(iv);
+
         if (count >= 0) {
-            TextView c = tv(formatCount(count), 12, color, false);
-            item.addView(c);
+            TextView countView = tv(formatCount(count), 11, color, false);
+            countView.setSingleLine(true);
+            countView.setMaxLines(1);
+            countView.setHorizontallyScrolling(true);
+            countView.setGravity(Gravity.CENTER_VERTICAL | Gravity.LEFT);
+            countView.setLayoutParams(new LinearLayout.LayoutParams(0, dp(30), 1f));
+            item.addView(countView);
         }
+
         item.setOnClickListener(click);
         return item;
     }
@@ -756,7 +896,7 @@ public class MainActivity extends Activity {
 
         LinearLayout body = vbox();
         db.addView(currentAccountId, p.id);
-        body.addView(postView(p, true));
+        body.addView(detailPostView(p));
         body.addView(XUi.divider(this, pal.border));
 
         List<Post> replies = db.repliesTo(p.id, currentAccountId);
