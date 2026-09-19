@@ -2047,6 +2047,113 @@ public class MainActivity extends Activity {
                 .show();
     }
 
+    private void chooseAccountImage(long accountId, boolean avatar, String currentPath) {
+        pendingImageAccountId = accountId;
+        int request = avatar ? PICK_AVATAR : PICK_BANNER;
+        if (currentPath != null && new File(currentPath).exists()) {
+            String[] options = {"Choose a new image", "Adjust current image"};
+            new AlertDialog.Builder(this)
+                    .setTitle(avatar ? "Profile picture" : "Header image")
+                    .setItems(options, (d, which) -> {
+                        if (which == 0) pickImage(request);
+                        else showCropEditorFromPath(currentPath, accountId, avatar);
+                    })
+                    .setNegativeButton("Cancel", (d,w) -> renderProfile(accountId))
+                    .show();
+        } else {
+            pickImage(request);
+        }
+    }
+
+    private void showCropEditorFromUri(Uri uri, long accountId, boolean avatar) throws Exception {
+        Bitmap bitmap;
+        try (InputStream in = getContentResolver().openInputStream(uri)) {
+            if (in == null) throw new Exception("Cannot open image");
+            bitmap = BitmapFactory.decodeStream(in);
+        }
+        if (bitmap == null) throw new Exception("Couldn't decode image");
+        showCropEditor(bitmap, accountId, avatar);
+    }
+
+    private void showCropEditorFromPath(String path, long accountId, boolean avatar) {
+        Bitmap bitmap = BitmapFactory.decodeFile(path);
+        if (bitmap == null) {
+            Toast.makeText(this, "Couldn't open the current image", Toast.LENGTH_SHORT).show();
+            renderProfile(accountId);
+            return;
+        }
+        showCropEditor(bitmap, accountId, avatar);
+    }
+
+    private void showCropEditor(Bitmap bitmap, long accountId, boolean avatar) {
+        Dialog d = new Dialog(this);
+        d.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        LinearLayout root = vbox();
+
+        LinearLayout top = hbox();
+        top.setPadding(dp(8), dp(6), dp(8), dp(6));
+        XUi.IconView close = new XUi.IconView(this, XUi.IconView.CLOSE, pal.fg);
+        close.setLayoutParams(new LinearLayout.LayoutParams(dp(42), dp(42)));
+        close.setPadding(dp(10), dp(10), dp(10), dp(10));
+        top.addView(close);
+        TextView title = tv(avatar ? "Adjust profile picture" : "Adjust header", 18, pal.fg, true);
+        title.setLayoutParams(new LinearLayout.LayoutParams(0, dp(42), 1f));
+        top.addView(title);
+        TextView rotate = tv("Rotate", 14, XUi.BLUE, true);
+        rotate.setGravity(Gravity.CENTER);
+        rotate.setPadding(dp(10), 0, dp(10), 0);
+        top.addView(rotate);
+        TextView save = pill("Save", true);
+        save.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(36)));
+        top.addView(save);
+        root.addView(top);
+
+        CropImageView crop = new CropImageView(this);
+        crop.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        root.addView(crop);
+
+        TextView hint = tv("Drag to move · pinch to resize · double-tap to reset", 13, pal.secondary, false);
+        hint.setGravity(Gravity.CENTER);
+        hint.setPadding(dp(10), dp(12), dp(10), dp(14));
+        root.addView(hint);
+
+        crop.post(() -> crop.setBitmap(bitmap, avatar ? 1f : 3f));
+        close.setOnClickListener(v -> { d.dismiss(); renderProfile(accountId); });
+        rotate.setOnClickListener(v -> crop.rotate90());
+        save.setOnClickListener(v -> {
+            try {
+                Bitmap out = crop.renderCrop(avatar ? 1024 : 1500, avatar ? 1024 : 500);
+                if (out == null) throw new Exception("Couldn't crop image");
+                String path = saveBitmapToInternal(out);
+                out.recycle();
+                db.setAccountImage(accountId, avatar ? "avatar_path" : "banner_path", path);
+                clearAccountCache();
+                d.dismiss();
+                renderProfile(accountId);
+            } catch (Exception e) {
+                Toast.makeText(this, "Couldn't save image: " + e.getMessage(), Toast.LENGTH_LONG).show();
+            }
+        });
+
+        d.setContentView(root);
+        d.show();
+        Window w = d.getWindow();
+        if (w != null) {
+            w.setBackgroundDrawable(new ColorDrawable(pal.bg));
+            w.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT);
+        }
+    }
+
+    private String saveBitmapToInternal(Bitmap bitmap) throws Exception {
+        File dir = new File(getFilesDir(), "media");
+        if (!dir.exists()) dir.mkdirs();
+        File out = new File(dir, UUID.randomUUID().toString() + ".jpg");
+        try (OutputStream os = new BufferedOutputStream(new FileOutputStream(out))) {
+            if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 95, os)) throw new Exception("Image compression failed");
+        }
+        return out.getAbsolutePath();
+    }
+
     private void pickImage(int request) {
         Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         i.addCategory(Intent.CATEGORY_OPENABLE);
@@ -2079,16 +2186,14 @@ public class MainActivity extends Activity {
         Uri uri = data.getData();
         try {
             if (requestCode == PICK_AVATAR || requestCode == PICK_BANNER || requestCode == PICK_POST_MEDIA) {
-                String path = copyImageToInternal(uri);
                 if (requestCode == PICK_POST_MEDIA) {
+                    String path = copyImageToInternal(uri);
                     composeMediaPath = path;
                     showComposer(composeReplyTo, composeQuoteOf);
                 } else if (pendingImageAccountId > 0) {
-                    db.setAccountImage(pendingImageAccountId, requestCode == PICK_AVATAR ? "avatar_path" : "banner_path", path);
-                    clearAccountCache();
                     long id = pendingImageAccountId;
                     pendingImageAccountId = -1;
-                    renderProfile(id);
+                    showCropEditorFromUri(uri, id, requestCode == PICK_AVATAR);
                 }
             } else if (requestCode == SAVE_POST_MEDIA && pendingSaveMediaPath != null) {
                 try (InputStream in = new BufferedInputStream(new FileInputStream(pendingSaveMediaPath));
