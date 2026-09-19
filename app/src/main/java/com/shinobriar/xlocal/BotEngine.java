@@ -27,9 +27,12 @@ final class BotEngine {
     private final Runnable onMutation;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
+    private final ExecutorService fameWorker = Executors.newSingleThreadExecutor();
+    private final ExecutorService fameTextWorker = Executors.newFixedThreadPool(2);
     private final Random random = new Random();
     private boolean running;
     private boolean busy;
+    private volatile boolean instantFameActive;
 
     BotEngine(Context context, LocalDb db, SharedPreferences prefs, Runnable onMutation) {
         this.context = context.getApplicationContext();
@@ -52,6 +55,119 @@ final class BotEngine {
     void shutdown() {
         stop();
         worker.shutdownNow();
+        fameWorker.shutdownNow();
+        fameTextWorker.shutdownNow();
+    }
+
+    boolean isInstantFameActive() {
+        return instantFameActive;
+    }
+
+    boolean startInstantFame(long targetAccountId, Runnable onFinished) {
+        synchronized (this) {
+            if (instantFameActive) return false;
+            List<Account> allBots = db.botAccounts();
+            boolean hasOtherBot = false;
+            for (Account bot : allBots) {
+                if (bot.id != targetAccountId) {
+                    hasOtherBot = true;
+                    break;
+                }
+            }
+            if (!hasOtherBot) return false;
+            instantFameActive = true;
+        }
+
+        fameWorker.execute(() -> {
+            final long deadline = System.currentTimeMillis() + 5_000L;
+            long lastRefresh = 0L;
+            int queuedAiReplies = 0;
+            int queuedAiDms = 0;
+
+            try {
+                while (System.currentTimeMillis() < deadline && !Thread.currentThread().isInterrupted()) {
+                    List<Account> bots = db.botAccounts();
+                    ArrayList<Account> usableBots = new ArrayList<>();
+                    for (Account bot : bots) if (bot.id != targetAccountId) usableBots.add(bot);
+                    if (usableBots.isEmpty()) break;
+
+                    Account bot = usableBots.get(random.nextInt(usableBots.size()));
+
+                    if (!db.isFollowing(bot.id, targetAccountId)) {
+                        try { db.toggleFollow(bot.id, targetAccountId); } catch (Exception ignored) {}
+                    }
+
+                    List<Post> targetPosts = db.postsByAccount(targetAccountId, false);
+                    Post target = targetPosts.isEmpty() ? null
+                            : targetPosts.get(random.nextInt(Math.min(targetPosts.size(), 20)));
+
+                    if (target != null) {
+                        // Make each real bot visibly pile onto the selected account's posts.
+                        try { db.ensureInteraction(bot.id, target.id, "like"); } catch (Exception ignored) {}
+                        if (random.nextInt(100) < 72) {
+                            try { db.ensureInteraction(bot.id, target.id, "repost"); } catch (Exception ignored) {}
+                        }
+                        if (random.nextInt(100) < 28) {
+                            try { db.ensureInteraction(bot.id, target.id, "bookmark"); } catch (Exception ignored) {}
+                        }
+                        try { db.addView(bot.id, target.id); } catch (Exception ignored) {}
+
+                        if (queuedAiReplies < 4 && random.nextInt(100) < 22) {
+                            queuedAiReplies++;
+                            final Account replyBot = bot;
+                            final Post replyTarget = target;
+                            fameTextWorker.execute(() -> {
+                                try {
+                                    String text = ollama(replyBot, replyTarget, "reply");
+                                    if (text != null && !text.trim().isEmpty()) {
+                                        db.insertPost(replyBot.id, text, null, replyTarget.id, null);
+                                        main.post(() -> {
+                                            if (onMutation != null) onMutation.run();
+                                        });
+                                    }
+                                } catch (Exception ignored) {}
+                            });
+                        }
+                    } else if (queuedAiDms < 2 && random.nextInt(100) < 18) {
+                        queuedAiDms++;
+                        final Account dmBot = bot;
+                        fameTextWorker.execute(() -> {
+                            try {
+                                String text = ollama(dmBot, null, "dm");
+                                if (text != null && !text.trim().isEmpty()) {
+                                    db.sendMessage(dmBot.id, targetAccountId, text);
+                                    main.post(() -> {
+                                        if (onMutation != null) onMutation.run();
+                                    });
+                                }
+                            } catch (Exception ignored) {}
+                        });
+                    }
+
+                    long now = System.currentTimeMillis();
+                    if (now - lastRefresh >= 450L) {
+                        lastRefresh = now;
+                        main.post(() -> {
+                            if (onMutation != null) onMutation.run();
+                        });
+                    }
+
+                    try {
+                        Thread.sleep(70L + random.nextInt(90));
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                }
+            } finally {
+                instantFameActive = false;
+                main.post(() -> {
+                    if (onMutation != null) onMutation.run();
+                    if (onFinished != null) onFinished.run();
+                });
+            }
+        });
+        return true;
     }
 
     private final Runnable tick = new Runnable() {
