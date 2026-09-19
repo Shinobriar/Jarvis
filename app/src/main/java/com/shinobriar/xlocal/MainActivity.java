@@ -2800,6 +2800,23 @@ public class MainActivity extends Activity {
         startActivityForResult(i, request);
     }
 
+    private void takeCameraPhoto() {
+        Intent i = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+        if (i.resolveActivity(getPackageManager()) == null) {
+            Toast.makeText(this, "No camera app is available", Toast.LENGTH_SHORT).show();
+            showComposer(composeReplyTo, composeQuoteOf);
+            return;
+        }
+        startActivityForResult(i, CAPTURE_POST_MEDIA);
+    }
+
+    private void pickGif() {
+        Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        i.addCategory(Intent.CATEGORY_OPENABLE);
+        i.setType("image/gif");
+        startActivityForResult(i, PICK_GIF_MEDIA);
+    }
+
     private void exportUniversePicker() {
         Intent i = new Intent(Intent.ACTION_CREATE_DOCUMENT);
         i.addCategory(Intent.CATEGORY_OPENABLE);
@@ -2818,16 +2835,38 @@ public class MainActivity extends Activity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (resultCode != RESULT_OK || data == null || data.getData() == null) {
-            if (requestCode == PICK_POST_MEDIA) showComposer(composeReplyTo, composeQuoteOf);
+
+        if (resultCode != RESULT_OK) {
+            if (requestCode == PICK_POST_MEDIA || requestCode == PICK_GIF_MEDIA || requestCode == CAPTURE_POST_MEDIA) {
+                showComposer(composeReplyTo, composeQuoteOf);
+            }
             return;
         }
-        Uri uri = data.getData();
+
         try {
-            if (requestCode == PICK_AVATAR || requestCode == PICK_BANNER || requestCode == PICK_POST_MEDIA) {
+            if (requestCode == CAPTURE_POST_MEDIA) {
+                Bitmap bitmap = data == null || data.getExtras() == null ? null
+                        : (Bitmap) data.getExtras().get("data");
+                if (bitmap == null) throw new Exception("Camera did not return an image");
+                composeMediaPath = saveBitmapToInternal(bitmap);
+                showComposer(composeReplyTo, composeQuoteOf);
+                return;
+            }
+
+            if (data == null || data.getData() == null) {
+                if (requestCode == PICK_POST_MEDIA || requestCode == PICK_GIF_MEDIA) {
+                    showComposer(composeReplyTo, composeQuoteOf);
+                }
+                return;
+            }
+
+            Uri uri = data.getData();
+            if (requestCode == PICK_AVATAR || requestCode == PICK_BANNER || requestCode == PICK_POST_MEDIA || requestCode == PICK_GIF_MEDIA) {
                 if (requestCode == PICK_POST_MEDIA) {
-                    String path = copyImageToInternal(uri);
-                    composeMediaPath = path;
+                    composeMediaPath = copyImageToInternal(uri);
+                    showComposer(composeReplyTo, composeQuoteOf);
+                } else if (requestCode == PICK_GIF_MEDIA) {
+                    composeMediaPath = copyUriToInternal(uri, ".gif");
                     showComposer(composeReplyTo, composeQuoteOf);
                 } else if (pendingImageAccountId > 0) {
                     long id = pendingImageAccountId;
@@ -2850,17 +2889,23 @@ public class MainActivity extends Activity {
             }
         } catch (Exception e) {
             Toast.makeText(this, "Couldn't complete that: " + e.getMessage(), Toast.LENGTH_LONG).show();
-            if (requestCode == PICK_POST_MEDIA) showComposer(composeReplyTo, composeQuoteOf);
+            if (requestCode == PICK_POST_MEDIA || requestCode == PICK_GIF_MEDIA || requestCode == CAPTURE_POST_MEDIA) {
+                showComposer(composeReplyTo, composeQuoteOf);
+            }
         }
     }
 
     private String copyImageToInternal(Uri uri) throws Exception {
+        return copyUriToInternal(uri, ".img");
+    }
+
+    private String copyUriToInternal(Uri uri, String suffix) throws Exception {
         File dir = new File(getFilesDir(), "media");
         if (!dir.exists()) dir.mkdirs();
-        File out = new File(dir, UUID.randomUUID().toString() + ".img");
+        File out = new File(dir, UUID.randomUUID().toString() + suffix);
         try (InputStream in = getContentResolver().openInputStream(uri);
              OutputStream os = new BufferedOutputStream(new FileOutputStream(out))) {
-            if (in == null) throw new Exception("Cannot open image");
+            if (in == null) throw new Exception("Cannot open media");
             byte[] buf = new byte[64 * 1024];
             int n;
             while ((n = in.read(buf)) > 0) os.write(buf, 0, n);
