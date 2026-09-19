@@ -1,0 +1,24 @@
+name: Export aapt2
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ensure build tools
+        run: |
+          export ANDROID_HOME=/usr/local/lib/android/sdk
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "build-tools;35.0.0"
+      - name: Bundle aapt2
+        run: |
+          mkdir -p aapt2bundle
+          cp /usr/local/lib/android/sdk/build-tools/35.0.0/aapt2 aapt2bundle/
+          chmod +x aapt2bundle/aapt2
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-aapt2-35
+          path: aapt2bundle
+          if-no-files-found: error
