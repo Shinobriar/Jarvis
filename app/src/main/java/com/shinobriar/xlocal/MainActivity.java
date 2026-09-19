@@ -39,6 +39,7 @@ import android.text.style.ClickableSpan;
 import android.text.style.ForegroundColorSpan;
 import android.provider.MediaStore;
 import android.view.Gravity;
+import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewOutlineProvider;
@@ -119,6 +120,11 @@ public class MainActivity extends Activity {
     private long currentPostId = -1;
     private long currentChatId = -1;
     private boolean currentFollowListFollowing = true;
+    private String currentSearchQuery = "";
+
+    private final ArrayList<NavState> navigationHistory = new ArrayList<>();
+    private boolean restoringNavigation = false;
+    private boolean hasRenderedScreen = false;
 
     private long pendingImageAccountId = -1;
     private String pendingSaveMediaPath;
@@ -133,6 +139,25 @@ public class MainActivity extends Activity {
     private long activeDraftId = -1;
 
     private final Map<Long, Account> accountCache = new HashMap<>();
+
+    private static final class NavState {
+        int screen;
+        boolean homeForYou;
+        long profileId;
+        int profileTab;
+        long postId;
+        long chatId;
+        boolean followFollowing;
+        String searchQuery;
+
+        NavState(int screen) {
+            this.screen = screen;
+            this.profileId = -1;
+            this.postId = -1;
+            this.chatId = -1;
+            this.searchQuery = "";
+        }
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -338,6 +363,107 @@ public class MainActivity extends Activity {
 
     private void setScreen(View root) {
         setContentView(root);
+        hasRenderedScreen = true;
+    }
+
+    private NavState captureNavigationState() {
+        NavState state = new NavState(currentScreen);
+        state.homeForYou = homeForYou;
+        state.profileId = currentProfileId;
+        state.profileTab = profileTab;
+        state.postId = currentPostId;
+        state.chatId = currentChatId;
+        state.followFollowing = currentFollowListFollowing;
+        state.searchQuery = currentSearchQuery == null ? "" : currentSearchQuery;
+        return state;
+    }
+
+    private boolean isCurrentDestination(int targetScreen, long targetId, boolean targetFlag) {
+        if (currentScreen != targetScreen) return false;
+        if (targetScreen == SCREEN_PROFILE) return currentProfileId == targetId;
+        if (targetScreen == SCREEN_POST) return currentPostId == targetId;
+        if (targetScreen == SCREEN_CHAT) return currentChatId == targetId;
+        if (targetScreen == SCREEN_FOLLOW_LIST) {
+            return currentProfileId == targetId && currentFollowListFollowing == targetFlag;
+        }
+        return true;
+    }
+
+    private void rememberBeforeNavigation(int targetScreen) {
+        rememberBeforeNavigation(targetScreen, -1, false);
+    }
+
+    private void rememberBeforeNavigation(int targetScreen, long targetId) {
+        rememberBeforeNavigation(targetScreen, targetId, false);
+    }
+
+    private void rememberBeforeNavigation(int targetScreen, long targetId, boolean targetFlag) {
+        if (restoringNavigation || !hasRenderedScreen) return;
+        if (isCurrentDestination(targetScreen, targetId, targetFlag)) return;
+
+        NavState current = captureNavigationState();
+        if (navigationHistory.size() >= 100) navigationHistory.remove(0);
+        navigationHistory.add(current);
+    }
+
+    private boolean restorePreviousNavigation() {
+        while (!navigationHistory.isEmpty()) {
+            NavState state = navigationHistory.remove(navigationHistory.size() - 1);
+            restoringNavigation = true;
+            try {
+                homeForYou = state.homeForYou;
+                profileTab = state.profileTab;
+                currentSearchQuery = state.searchQuery == null ? "" : state.searchQuery;
+
+                if (state.screen == SCREEN_HOME) {
+                    renderHome();
+                } else if (state.screen == SCREEN_SEARCH) {
+                    renderSearch();
+                } else if (state.screen == SCREEN_NOTIFICATIONS) {
+                    renderNotifications();
+                } else if (state.screen == SCREEN_MESSAGES) {
+                    renderMessages();
+                } else if (state.screen == SCREEN_PROFILE && state.profileId > 0 && db.getAccount(state.profileId) != null) {
+                    renderProfile(state.profileId);
+                } else if (state.screen == SCREEN_POST && state.postId > 0 && db.getPost(state.postId) != null) {
+                    renderPost(state.postId);
+                } else if (state.screen == SCREEN_BOOKMARKS) {
+                    renderBookmarks();
+                } else if (state.screen == SCREEN_CHAT && state.chatId > 0 && db.getAccount(state.chatId) != null) {
+                    renderChat(state.chatId);
+                } else if (state.screen == SCREEN_DRAFTS) {
+                    renderDrafts();
+                } else if (state.screen == SCREEN_FOLLOW_LIST && state.profileId > 0) {
+                    renderFollowList(state.profileId, state.followFollowing);
+                } else {
+                    continue;
+                }
+                return true;
+            } finally {
+                restoringNavigation = false;
+            }
+        }
+        return false;
+    }
+
+    @Override
+    public void onBackPressed() {
+        if (restorePreviousNavigation()) return;
+
+        // A non-root screen should never close the Activity just because its
+        // previous entry became unavailable (for example, a deleted post).
+        if (currentScreen != SCREEN_HOME) {
+            restoringNavigation = true;
+            try {
+                renderHome();
+            } finally {
+                restoringNavigation = false;
+            }
+            return;
+        }
+
+        // Only root Home with no history is allowed to leave the app.
+        super.onBackPressed();
     }
 
     private FrameLayout baseFrame() {
