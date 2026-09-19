@@ -95,6 +95,9 @@ final class LocalDb extends SQLiteOpenHelper {
                 "media_path TEXT," +
                 "reply_to INTEGER," +
                 "quote_of INTEGER," +
+                "location TEXT NOT NULL DEFAULT ''," +
+                "poll_options TEXT NOT NULL DEFAULT ''," +
+                "scheduled_at INTEGER NOT NULL DEFAULT 0," +
                 "created_at INTEGER NOT NULL)");
 
         db.execSQL("CREATE TABLE poll_votes (" +
@@ -174,6 +177,9 @@ final class LocalDb extends SQLiteOpenHelper {
                     "location TEXT NOT NULL DEFAULT ''," +
                     "poll_options TEXT NOT NULL DEFAULT ''," +
                     "publish_at INTEGER NOT NULL)");
+            db.execSQL("ALTER TABLE drafts ADD COLUMN location TEXT NOT NULL DEFAULT ''");
+            db.execSQL("ALTER TABLE drafts ADD COLUMN poll_options TEXT NOT NULL DEFAULT ''");
+            db.execSQL("ALTER TABLE drafts ADD COLUMN scheduled_at INTEGER NOT NULL DEFAULT 0");
         }
     }
 
