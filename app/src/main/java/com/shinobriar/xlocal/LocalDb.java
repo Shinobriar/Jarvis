@@ -13,7 +13,7 @@ import java.util.Locale;
 
 final class LocalDb extends SQLiteOpenHelper {
     static final String DB_NAME = "xlocal.db";
-    static final int DB_VERSION = 2;
+    static final int DB_VERSION = 3;
 
     LocalDb(Context context) {
         super(context, DB_NAME, null, DB_VERSION);
@@ -60,7 +60,10 @@ final class LocalDb extends SQLiteOpenHelper {
                 "replies INTEGER NOT NULL DEFAULT 0," +
                 "views INTEGER NOT NULL DEFAULT 0," +
                 "bookmarks INTEGER NOT NULL DEFAULT 0," +
-                "viral_boost REAL NOT NULL DEFAULT 0)");
+                "viral_boost REAL NOT NULL DEFAULT 0," +
+                "location TEXT NOT NULL DEFAULT ''," +
+                "poll_options TEXT NOT NULL DEFAULT ''," +
+                "poll_counts TEXT NOT NULL DEFAULT '')");
 
         db.execSQL("CREATE TABLE interactions (" +
                 "account_id INTEGER NOT NULL," +
@@ -93,6 +96,24 @@ final class LocalDb extends SQLiteOpenHelper {
                 "reply_to INTEGER," +
                 "quote_of INTEGER," +
                 "created_at INTEGER NOT NULL)");
+
+        db.execSQL("CREATE TABLE poll_votes (" +
+                "account_id INTEGER NOT NULL," +
+                "post_id INTEGER NOT NULL," +
+                "option_index INTEGER NOT NULL," +
+                "created_at INTEGER NOT NULL," +
+                "PRIMARY KEY(account_id, post_id))");
+
+        db.execSQL("CREATE TABLE scheduled_posts (" +
+                "id INTEGER PRIMARY KEY AUTOINCREMENT," +
+                "author_id INTEGER NOT NULL," +
+                "body TEXT NOT NULL DEFAULT ''," +
+                "media_path TEXT," +
+                "reply_to INTEGER," +
+                "quote_of INTEGER," +
+                "location TEXT NOT NULL DEFAULT ''," +
+                "poll_options TEXT NOT NULL DEFAULT ''," +
+                "publish_at INTEGER NOT NULL)");
 
         seed(db);
     }
@@ -132,6 +153,27 @@ final class LocalDb extends SQLiteOpenHelper {
                     "reply_to INTEGER," +
                     "quote_of INTEGER," +
                     "created_at INTEGER NOT NULL)");
+        }
+        if (oldVersion < 3) {
+            db.execSQL("ALTER TABLE posts ADD COLUMN location TEXT NOT NULL DEFAULT ''");
+            db.execSQL("ALTER TABLE posts ADD COLUMN poll_options TEXT NOT NULL DEFAULT ''");
+            db.execSQL("ALTER TABLE posts ADD COLUMN poll_counts TEXT NOT NULL DEFAULT ''");
+            db.execSQL("CREATE TABLE IF NOT EXISTS poll_votes (" +
+                    "account_id INTEGER NOT NULL," +
+                    "post_id INTEGER NOT NULL," +
+                    "option_index INTEGER NOT NULL," +
+                    "created_at INTEGER NOT NULL," +
+                    "PRIMARY KEY(account_id, post_id))");
+            db.execSQL("CREATE TABLE IF NOT EXISTS scheduled_posts (" +
+                    "id INTEGER PRIMARY KEY AUTOINCREMENT," +
+                    "author_id INTEGER NOT NULL," +
+                    "body TEXT NOT NULL DEFAULT ''," +
+                    "media_path TEXT," +
+                    "reply_to INTEGER," +
+                    "quote_of INTEGER," +
+                    "location TEXT NOT NULL DEFAULT ''," +
+                    "poll_options TEXT NOT NULL DEFAULT ''," +
+                    "publish_at INTEGER NOT NULL)");
         }
     }
 
