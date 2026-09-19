@@ -28,6 +28,11 @@ final class Post {
     long views;
     long bookmarks;
     double viralBoost;
+    // Profile-timeline metadata. A repost is an event owned by another account
+    // while the underlying Post remains authored by authorId.
+    boolean profileRepost;
+    long profileActorId;
+    long profileEventAt;
 }
 
 final class LocalNotification {
