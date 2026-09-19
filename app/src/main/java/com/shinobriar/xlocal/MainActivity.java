@@ -398,7 +398,9 @@ public class MainActivity extends Activity {
         shell.addView(XUi.divider(this, pal.border));
 
         LinearLayout feed = vbox();
-        List<Post> posts = homeForYou ? forYouPosts() : db.followingPosts(currentAccountId, 250);
+        // Both home tabs are chronological: newest timeline event first.
+        // Reposts are timeline events too, so the reposter label survives outside profiles.
+        List<Post> posts = db.timelinePosts(currentAccountId, !homeForYou, 250);
         if (posts.isEmpty()) {
             feed.addView(emptyState("Your timeline is quiet", "Follow local accounts or create posts from any identity."));
         } else {
