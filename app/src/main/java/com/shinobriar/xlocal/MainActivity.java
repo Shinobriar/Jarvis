@@ -196,6 +196,95 @@ public class MainActivity extends Activity {
         return XUi.text(this, text, size, color, bold);
     }
 
+    private void applyMentionLinks(TextView view, String text) {
+        SpannableStringBuilder s = new SpannableStringBuilder(text == null ? "" : text);
+        Matcher m = Pattern.compile("@([A-Za-z0-9_]{1,30})").matcher(s);
+        while (m.find()) {
+            Account target = db.getAccountByHandle(m.group(1));
+            if (target == null || !db.canSeeAccount(currentAccountId, target.id)) continue;
+            final long targetId = target.id;
+            s.setSpan(new ClickableSpan() {
+                @Override public void onClick(View widget) { renderProfile(targetId); }
+                @Override public void updateDrawState(TextPaint ds) {
+                    ds.setColor(XUi.BLUE);
+                    ds.setUnderlineText(false);
+                }
+            }, m.start(), m.end(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
+        view.setText(s);
+        view.setMovementMethod(LinkMovementMethod.getInstance());
+        view.setHighlightColor(Color.TRANSPARENT);
+    }
+
+    private void wireMentionAutocomplete(EditText body, LinearLayout suggestions, ScrollView suggestionsScroll) {
+        final boolean[] internal = {false};
+        body.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
+            @Override public void afterTextChanged(Editable e) {
+                if (internal[0]) return;
+                ForegroundColorSpan[] old = e.getSpans(0, e.length(), ForegroundColorSpan.class);
+                for (ForegroundColorSpan span : old) e.removeSpan(span);
+                Matcher all = Pattern.compile("@[A-Za-z0-9_]{1,30}").matcher(e);
+                while (all.find()) {
+                    Account found = db.getAccountByHandle(all.group().substring(1));
+                    if (found != null && db.canSeeAccount(currentAccountId, found.id)) {
+                        e.setSpan(new ForegroundColorSpan(XUi.BLUE), all.start(), all.end(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    }
+                }
+
+                int cursor = body.getSelectionStart();
+                if (cursor < 0 || cursor > e.length()) {
+                    suggestionsScroll.setVisibility(View.GONE);
+                    return;
+                }
+                int start = cursor;
+                while (start > 0 && !Character.isWhitespace(e.charAt(start - 1))) start--;
+                if (start >= cursor || e.charAt(start) != '@') {
+                    suggestionsScroll.setVisibility(View.GONE);
+                    return;
+                }
+                String token = e.subSequence(start + 1, cursor).toString();
+                if (!token.matches("[A-Za-z0-9_]*")) {
+                    suggestionsScroll.setVisibility(View.GONE);
+                    return;
+                }
+
+                List<Account> matches = db.searchAccounts(token, currentAccountId);
+                suggestions.removeAllViews();
+                int shown = 0;
+                for (Account a : matches) {
+                    if (shown++ >= 12) break;
+                    LinearLayout row = hbox();
+                    row.setPadding(dp(10), dp(7), dp(10), dp(7));
+                    XUi.AvatarView av = new XUi.AvatarView(MainActivity.this, a);
+                    LinearLayout.LayoutParams ap = new LinearLayout.LayoutParams(dp(34), dp(34));
+                    ap.setMargins(0, 0, dp(9), 0);
+                    av.setLayoutParams(ap);
+                    row.addView(av);
+                    LinearLayout labels = vbox();
+                    labels.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+                    labels.addView(tv(a.name, 14, pal.fg, true));
+                    labels.addView(tv("@" + a.handle, 13, pal.secondary, false));
+                    row.addView(labels);
+                    final int tokenStart = start;
+                    final String replacement = "@" + a.handle + " ";
+                    row.setOnClickListener(v -> {
+                        internal[0] = true;
+                        Editable now = body.getText();
+                        int end = Math.min(body.getSelectionStart(), now.length());
+                        now.replace(tokenStart, end, replacement);
+                        body.setSelection(tokenStart + replacement.length());
+                        internal[0] = false;
+                        suggestionsScroll.setVisibility(View.GONE);
+                    });
+                    suggestions.addView(row);
+                }
+                suggestionsScroll.setVisibility(suggestions.getChildCount() > 0 ? View.VISIBLE : View.GONE);
+            }
+        });
+    }
+
     private View space(int widthDp, int heightDp) {
         Space s = new Space(this);
         s.setLayoutParams(new LinearLayout.LayoutParams(dp(widthDp), dp(heightDp)));
@@ -514,7 +603,8 @@ public class MainActivity extends Activity {
         content.addView(meta);
 
         if (!p.body.isEmpty()) {
-            TextView body = tv(p.body, detail ? 20 : 15, pal.fg, false);
+            TextView body = tv("", detail ? 20 : 15, pal.fg, false);
+            applyMentionLinks(body, p.body);
             body.setTextIsSelectable(false);
             body.setLineSpacing(0, 1.08f);
             body.setPadding(0, dp(2), dp(4), dp(7));
@@ -584,7 +674,8 @@ public class MainActivity extends Activity {
             meta.addView(h);
             card.addView(meta);
         }
-        TextView body = tv(q.body, 14, pal.fg, false);
+        TextView body = tv("", 14, pal.fg, false);
+        applyMentionLinks(body, q.body);
         body.setPadding(0, dp(4), 0, 0);
         card.addView(body);
         card.setOnClickListener(v -> renderPost(q.id));
