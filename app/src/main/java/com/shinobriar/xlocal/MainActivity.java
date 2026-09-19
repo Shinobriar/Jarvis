@@ -1280,78 +1280,126 @@ public class MainActivity extends Activity {
 
         Dialog d = new Dialog(this);
         d.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        d.setCancelable(false);
+
         LinearLayout root = vbox();
-        root.setPadding(dp(12), dp(8), dp(12), dp(10));
+        root.setPadding(0, dp(4), 0, 0);
 
         LinearLayout top = hbox();
+        top.setPadding(dp(10), dp(5), dp(10), dp(5));
+        top.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(58)));
+
         XUi.IconView close = new XUi.IconView(this, XUi.IconView.CLOSE, pal.fg);
-        close.setLayoutParams(new LinearLayout.LayoutParams(dp(38), dp(38)));
-        close.setPadding(dp(10), dp(10), dp(10), dp(10));
-        close.setOnClickListener(v -> d.dismiss());
+        close.setLayoutParams(new LinearLayout.LayoutParams(dp(42), dp(42)));
+        close.setPadding(dp(9), dp(9), dp(9), dp(9));
         top.addView(close);
+
         Space flex = new Space(this);
         flex.setLayoutParams(new LinearLayout.LayoutParams(0, 1, 1f));
         top.addView(flex);
-        TextView postButton = pill(replyTo == null ? "Post" : "Reply", true);
-        postButton.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(36)));
+
+        TextView draftsButton = tv("Drafts", 15, XUi.BLUE, true);
+        draftsButton.setGravity(Gravity.CENTER);
+        draftsButton.setPadding(dp(12), 0, dp(12), 0);
+        draftsButton.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(40)));
+        top.addView(draftsButton);
+
+        TextView postButton = tv(replyTo == null ? "Post" : "Reply", 15, Color.WHITE, true);
+        postButton.setGravity(Gravity.CENTER);
+        postButton.setPadding(dp(18), 0, dp(18), 0);
+        postButton.setBackground(XUi.rounded(XUi.BLUE, 999, this));
+        postButton.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(40)));
         top.addView(postButton);
         root.addView(top);
 
+        LinearLayout scrollBody = vbox();
+        scrollBody.setPadding(dp(16), dp(10), dp(12), dp(12));
+
         Account author = account(composeAuthorId);
-        LinearLayout identity = hbox();
-        identity.setPadding(dp(3), dp(10), 0, dp(3));
+        LinearLayout editorLine = hbox();
+        editorLine.setGravity(Gravity.TOP);
+
         XUi.AvatarView av = new XUi.AvatarView(this, author);
-        av.setLayoutParams(new LinearLayout.LayoutParams(dp(42), dp(42)));
-        identity.addView(av);
-        LinearLayout labels = vbox();
-        labels.setPadding(dp(10), 0, 0, 0);
-        LinearLayout authorNameRow = hbox();
-        authorNameRow.addView(tv(author.name, 15, pal.fg, true));
-        if (author.verified) authorNameRow.addView(verifiedBadge(16));
-        labels.addView(authorNameRow);
-        labels.addView(tv("Posting as @" + author.handle + "  ▾", 13, XUi.BLUE, false));
-        identity.addView(labels);
-        identity.setOnClickListener(v -> {
-            composeDraft = ((EditText) root.findViewWithTag("composer_body")).getText().toString();
+        LinearLayout.LayoutParams avp = new LinearLayout.LayoutParams(dp(46), dp(46));
+        avp.setMargins(0, 0, dp(10), 0);
+        av.setLayoutParams(avp);
+        av.setOnClickListener(v -> {
+            EditText body = root.findViewWithTag("composer_body");
+            if (body != null) composeDraft = body.getText().toString();
             d.dismiss();
             chooseComposerAuthor(replyTo, quoteOf);
         });
-        root.addView(identity);
+        editorLine.addView(av);
+
+        LinearLayout editorColumn = vbox();
+        editorColumn.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
         if (replyTo != null) {
             Post parent = db.getPost(replyTo);
             Account pa = parent == null ? null : account(parent.authorId);
-            if (pa != null) {
+            if (pa != null && db.canSeeAccount(currentAccountId, pa.id)) {
                 TextView replying = tv("Replying to @" + pa.handle, 14, pal.secondary, false);
-                replying.setPadding(dp(55), dp(5), 0, dp(4));
-                root.addView(replying);
+                replying.setPadding(0, 0, 0, dp(6));
+                editorColumn.addView(replying);
             }
         }
 
         EditText body = new EditText(this);
         body.setTag("composer_body");
-        body.setText(composeDraft);
-        body.setTextSize(20);
+        body.setTextSize(21);
         body.setTextColor(pal.fg);
         body.setHintTextColor(pal.secondary);
-        body.setHint(replyTo == null ? "What is happening?!" : "Post your reply");
-        body.setGravity(Gravity.TOP);
+        body.setHint(replyTo == null ? "What is happening?" : "Post your reply");
+        body.setGravity(Gravity.TOP | Gravity.LEFT);
         body.setBackgroundColor(Color.TRANSPARENT);
-        body.setPadding(dp(54), dp(8), dp(8), dp(12));
-        body.setMinHeight(dp(170));
-        root.addView(body);
+        body.setPadding(0, 0, dp(6), dp(8));
+        body.setMinHeight(dp(190));
+        body.setMaxLines(30);
+        editorColumn.addView(body);
+        editorLine.addView(editorColumn);
+        scrollBody.addView(editorLine);
+
+        LinearLayout mentionResults = vbox();
+        ScrollView mentionScroll = scrollOf(mentionResults);
+        LinearLayout.LayoutParams msp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(170));
+        msp.setMargins(dp(56), 0, dp(4), dp(8));
+        mentionScroll.setLayoutParams(msp);
+        mentionScroll.setBackground(XUi.stroked(pal.surface, pal.border, 12, this));
+        mentionScroll.setVisibility(View.GONE);
+        scrollBody.addView(mentionScroll);
+        wireMentionAutocomplete(body, mentionResults, mentionScroll);
+        body.setText(composeDraft == null ? "" : composeDraft);
+        body.setSelection(body.getText().length());
 
         if (composeMediaPath != null && new File(composeMediaPath).exists()) {
+            FrameLayout mediaWrap = new FrameLayout(this);
+            LinearLayout.LayoutParams mwp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(260));
+            mwp.setMargins(dp(56), dp(4), dp(4), dp(10));
+            mediaWrap.setLayoutParams(mwp);
+
             ImageView image = new ImageView(this);
             image.setScaleType(ImageView.ScaleType.CENTER_CROP);
             image.setImageBitmap(decodeScaled(composeMediaPath, 1200, 900));
             image.setBackground(XUi.rounded(pal.surface, 16, this));
             image.setClipToOutline(true);
             image.setOutlineProvider(ViewOutlineProvider.BACKGROUND);
-            LinearLayout.LayoutParams ip = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(260));
-            ip.setMargins(dp(54), 0, dp(4), dp(10));
-            image.setLayoutParams(ip);
-            root.addView(image);
+            image.setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+            mediaWrap.addView(image);
+
+            XUi.IconView remove = new XUi.IconView(this, XUi.IconView.CLOSE, Color.WHITE);
+            FrameLayout.LayoutParams rp = new FrameLayout.LayoutParams(dp(34), dp(34), Gravity.RIGHT | Gravity.TOP);
+            rp.setMargins(0, dp(8), dp(8), 0);
+            remove.setLayoutParams(rp);
+            remove.setPadding(dp(8), dp(8), dp(8), dp(8));
+            remove.setBackground(XUi.rounded(0xaa000000, 999, this));
+            remove.setOnClickListener(v -> {
+                composeDraft = body.getText().toString();
+                composeMediaPath = null;
+                d.dismiss();
+                showComposer(replyTo, quoteOf);
+            });
+            mediaWrap.addView(remove);
+            scrollBody.addView(mediaWrap);
         }
 
         if (quoteOf != null) {
@@ -1359,58 +1407,225 @@ public class MainActivity extends Activity {
             if (q != null) {
                 View qv = quotedPost(q);
                 LinearLayout.LayoutParams qp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-                qp.setMargins(dp(54), 0, dp(4), dp(10));
+                qp.setMargins(dp(56), 0, dp(4), dp(10));
                 qv.setLayoutParams(qp);
-                root.addView(qv);
+                scrollBody.addView(qv);
             }
         }
 
+        ScrollView contentScroll = scrollOf(scrollBody);
+        contentScroll.setFillViewport(false);
+        contentScroll.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        root.addView(contentScroll);
+
         root.addView(XUi.divider(this, pal.border));
+
+        LinearLayout permission = hbox();
+        permission.setPadding(dp(18), dp(8), dp(12), dp(8));
+        XUi.IconView globe = new XUi.IconView(this, XUi.IconView.GLOBE, XUi.BLUE);
+        globe.setLayoutParams(new LinearLayout.LayoutParams(dp(22), dp(22)));
+        globe.setPadding(dp(2), dp(2), dp(2), dp(2));
+        permission.addView(globe);
+        TextView permissionText = tv("  Everyone can reply", 14, XUi.BLUE, true);
+        permission.addView(permissionText);
+        root.addView(permission);
+        root.addView(XUi.divider(this, pal.border));
+
+        HorizontalScrollView toolbarScroll = new HorizontalScrollView(this);
+        toolbarScroll.setHorizontalScrollBarEnabled(false);
         LinearLayout tools = hbox();
-        tools.setPadding(dp(48), dp(5), 0, 0);
-        XUi.IconView photo = new XUi.IconView(this, XUi.IconView.PHOTO, XUi.BLUE);
-        photo.setLayoutParams(new LinearLayout.LayoutParams(dp(40), dp(40)));
-        photo.setPadding(dp(8), dp(8), dp(8), dp(8));
+        tools.setPadding(dp(12), dp(3), dp(8), dp(3));
+
+        XUi.IconView photo = composerTool(XUi.IconView.PHOTO);
         photo.setOnClickListener(v -> {
             composeDraft = body.getText().toString();
             d.dismiss();
             pickImage(PICK_POST_MEDIA);
         });
         tools.addView(photo);
-        TextView local = tv("Offline · local universe", 13, XUi.BLUE, true);
-        local.setPadding(dp(8), 0, 0, 0);
-        tools.addView(local);
-        root.addView(tools);
+
+        XUi.IconView camera = composerTool(XUi.IconView.CAMERA);
+        camera.setOnClickListener(v -> Toast.makeText(this, "Use the image picker to add a camera photo", Toast.LENGTH_SHORT).show());
+        tools.addView(camera);
+
+        XUi.IconView gif = composerTool(XUi.IconView.GIF);
+        gif.setOnClickListener(v -> Toast.makeText(this, "GIF picker is visual-only in the local simulator", Toast.LENGTH_SHORT).show());
+        tools.addView(gif);
+
+        XUi.IconView poll = composerTool(XUi.IconView.POLL);
+        poll.setOnClickListener(v -> Toast.makeText(this, "Poll composer isn't implemented yet", Toast.LENGTH_SHORT).show());
+        tools.addView(poll);
+
+        XUi.IconView location = composerTool(XUi.IconView.LOCATION);
+        location.setOnClickListener(v -> Toast.makeText(this, "Location attachment isn't used by this local simulator", Toast.LENGTH_SHORT).show());
+        tools.addView(location);
+
+        XUi.IconView schedule = composerTool(XUi.IconView.SCHEDULE);
+        schedule.setOnClickListener(v -> Toast.makeText(this, "Scheduled posts aren't enabled yet", Toast.LENGTH_SHORT).show());
+        tools.addView(schedule);
+
+        XUi.IconView plus = composerTool(XUi.IconView.PLUS_CIRCLE);
+        plus.setOnClickListener(v -> Toast.makeText(this, "Add another post is not needed for a single local post", Toast.LENGTH_SHORT).show());
+        tools.addView(plus);
+
+        toolbarScroll.addView(tools, new HorizontalScrollView.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(50)));
+        root.addView(toolbarScroll);
+
+        TextWatcher postState = new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
+                boolean ready = hasComposerContent(s == null ? "" : s.toString(), quoteOf);
+                postButton.setAlpha(ready ? 1f : .55f);
+            }
+            @Override public void afterTextChanged(Editable s) {}
+        };
+        body.addTextChangedListener(postState);
+        postButton.setAlpha(hasComposerContent(body.getText().toString(), quoteOf) ? 1f : .55f);
+
+        close.setOnClickListener(v -> maybeCloseComposer(d, body, replyTo, quoteOf));
+
+        draftsButton.setOnClickListener(v -> {
+            composeDraft = body.getText().toString();
+            if (hasComposerContent(composeDraft, quoteOf)) {
+                activeDraftId = db.saveDraft(activeDraftId, composeAuthorId, composeDraft, composeMediaPath, replyTo, quoteOf);
+            }
+            d.dismiss();
+            renderDrafts();
+        });
 
         postButton.setOnClickListener(v -> {
             String text = body.getText().toString().trim();
-            if (text.isEmpty() && (composeMediaPath == null || composeMediaPath.isEmpty()) && quoteOf == null) {
-                Toast.makeText(this, "Write something first", Toast.LENGTH_SHORT).show();
-                return;
-            }
+            if (!hasComposerContent(text, quoteOf)) return;
             db.insertPost(composeAuthorId, text, composeMediaPath, replyTo, quoteOf);
-            composeDraft = "";
-            composeMediaPath = null;
-            composeReplyTo = null;
-            composeQuoteOf = null;
+            if (activeDraftId > 0) db.deleteDraft(activeDraftId);
+            resetComposerState();
             d.dismiss();
             if (replyTo != null) renderPost(replyTo); else renderHome();
         });
 
         d.setContentView(root);
+        d.show();
         Window w = d.getWindow();
         if (w != null) {
             w.setBackgroundDrawable(new ColorDrawable(pal.bg));
             w.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT);
             w.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         }
-        d.setOnShowListener(x -> {
-            Window ww = d.getWindow();
-            if (ww != null) ww.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT);
-            body.requestFocus();
-            body.setSelection(body.getText().length());
-        });
-        d.show();
+        body.requestFocus();
+    }
+
+    private XUi.IconView composerTool(int type) {
+        XUi.IconView icon = new XUi.IconView(this, type, XUi.BLUE);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(48), dp(46));
+        lp.setMargins(0, 0, dp(3), 0);
+        icon.setLayoutParams(lp);
+        icon.setPadding(dp(10), dp(10), dp(10), dp(10));
+        return icon;
+    }
+
+    private boolean hasComposerContent(String text, Long quoteOf) {
+        return (text != null && !text.trim().isEmpty())
+                || (composeMediaPath != null && !composeMediaPath.isEmpty())
+                || quoteOf != null;
+    }
+
+    private void maybeCloseComposer(Dialog d, EditText body, Long replyTo, Long quoteOf) {
+        composeDraft = body.getText().toString();
+        if (!hasComposerContent(composeDraft, quoteOf)) {
+            resetComposerState();
+            d.dismiss();
+            return;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("Save post?")
+                .setMessage("Keep this unfinished post in Drafts?")
+                .setNegativeButton("Cancel", null)
+                .setNeutralButton("Discard", (x,w) -> {
+                    if (activeDraftId > 0) db.deleteDraft(activeDraftId);
+                    resetComposerState();
+                    d.dismiss();
+                })
+                .setPositiveButton("Save draft", (x,w) -> {
+                    db.saveDraft(activeDraftId, composeAuthorId, composeDraft, composeMediaPath, replyTo, quoteOf);
+                    resetComposerState();
+                    d.dismiss();
+                }).show();
+    }
+
+    private void resetComposerState() {
+        composeDraft = "";
+        composeMediaPath = null;
+        composeReplyTo = null;
+        composeQuoteOf = null;
+        composeAuthorId = currentAccountId;
+        activeDraftId = -1;
+    }
+
+    private void renderDrafts() {
+        currentScreen = SCREEN_DRAFTS;
+        LinearLayout shell = vbox();
+        shell.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        shell.addView(topBar("Drafts", true));
+        shell.addView(XUi.divider(this, pal.border));
+
+        LinearLayout list = vbox();
+        List<DraftPost> drafts = db.drafts(currentAccountId);
+        if (drafts.isEmpty()) {
+            list.addView(emptyState("No drafts", "Unfinished posts you save will appear here."));
+        } else {
+            for (DraftPost draft : drafts) {
+                LinearLayout row = hbox();
+                row.setGravity(Gravity.TOP);
+                row.setPadding(dp(14), dp(12), dp(14), dp(12));
+                Account a = account(draft.authorId);
+                XUi.AvatarView av = new XUi.AvatarView(this, a);
+                LinearLayout.LayoutParams ap = new LinearLayout.LayoutParams(dp(42), dp(42));
+                ap.setMargins(0, 0, dp(10), 0);
+                av.setLayoutParams(ap);
+                row.addView(av);
+
+                LinearLayout text = vbox();
+                text.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+                String preview = draft.body == null || draft.body.trim().isEmpty() ? "(media / quoted post)" : draft.body;
+                TextView body = tv(preview, 15, pal.fg, false);
+                body.setMaxLines(3);
+                text.addView(body);
+                TextView date = tv(new SimpleDateFormat("MMM d · h:mm a", Locale.US).format(new Date(draft.createdAt)), 12, pal.secondary, false);
+                date.setPadding(0, dp(5), 0, 0);
+                text.addView(date);
+                row.addView(text);
+
+                row.setOnClickListener(v -> {
+                    DraftPost load = db.getDraft(draft.id);
+                    if (load == null) return;
+                    activeDraftId = load.id;
+                    composeAuthorId = load.authorId;
+                    composeDraft = load.body == null ? "" : load.body;
+                    composeMediaPath = load.mediaPath;
+                    composeReplyTo = load.replyTo;
+                    composeQuoteOf = load.quoteOf;
+                    showComposer(load.replyTo, load.quoteOf);
+                });
+                row.setOnLongClickListener(v -> {
+                    new AlertDialog.Builder(this)
+                            .setTitle("Delete draft?")
+                            .setNegativeButton("Cancel", null)
+                            .setPositiveButton("Delete", (x,w) -> {
+                                db.deleteDraft(draft.id);
+                                renderDrafts();
+                            }).show();
+                    return true;
+                });
+                list.addView(row);
+                list.addView(XUi.divider(this, pal.border));
+            }
+        }
+
+        ScrollView scroll = scrollOf(list);
+        scroll.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        shell.addView(scroll);
+        shell.addView(bottomNav(0));
+        setScreen(shell);
     }
 
     private void chooseComposerAuthor(Long replyTo, Long quoteOf) {
