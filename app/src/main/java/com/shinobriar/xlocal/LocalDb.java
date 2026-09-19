@@ -544,7 +544,12 @@ final class LocalDb extends SQLiteOpenHelper {
 
     List<LocalNotification> notifications(long accountId) {
         ArrayList<LocalNotification> out = new ArrayList<>();
-        Cursor c = getReadableDatabase().query("notifications", null, "account_id=?", new String[]{String.valueOf(accountId)}, null, null, "created_at DESC", "150");
+        String sql = "SELECT n.* FROM notifications n JOIN accounts a ON a.id=n.actor_id " +
+                "WHERE n.account_id=? AND (a.private=0 OR a.id=? OR EXISTS " +
+                "(SELECT 1 FROM follows vf WHERE vf.follower_id=a.id AND vf.following_id=?)) " +
+                "ORDER BY n.created_at DESC LIMIT 150";
+        Cursor c = getReadableDatabase().rawQuery(sql,
+                new String[]{String.valueOf(accountId), String.valueOf(accountId), String.valueOf(accountId)});
         try {
             while (c.moveToNext()) {
                 LocalNotification n = new LocalNotification();
@@ -572,7 +577,10 @@ final class LocalDb extends SQLiteOpenHelper {
 
     int unreadNotifications(long accountId) {
         return (int) DatabaseUtils.longForQuery(getReadableDatabase(),
-                "SELECT COUNT(*) FROM notifications WHERE account_id=? AND read=0", new String[]{String.valueOf(accountId)});
+                "SELECT COUNT(*) FROM notifications n JOIN accounts a ON a.id=n.actor_id " +
+                        "WHERE n.account_id=? AND n.read=0 AND (a.private=0 OR a.id=? OR EXISTS " +
+                        "(SELECT 1 FROM follows vf WHERE vf.follower_id=a.id AND vf.following_id=?))",
+                new String[]{String.valueOf(accountId), String.valueOf(accountId), String.valueOf(accountId)});
     }
 
     void sendMessage(long senderId, long receiverId, String body) {
