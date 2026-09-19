@@ -154,6 +154,7 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        uiHandler.removeCallbacksAndMessages(null);
         if (botEngine != null) botEngine.shutdown();
         super.onDestroy();
     }
@@ -496,6 +497,7 @@ public class MainActivity extends Activity {
     }
 
     private void renderHome() {
+        db.publishDueScheduled();
         currentScreen = SCREEN_HOME;
         currentProfileId = -1;
         currentPostId = -1;
