@@ -188,6 +188,15 @@ final class LocalDb extends SQLiteOpenHelper {
         }
     }
 
+    Account getAccountByHandle(String handle) {
+        if (handle == null) return null;
+        String h = normalizeHandle(handle);
+        Cursor c = getReadableDatabase().query("accounts", null, "handle=? COLLATE NOCASE",
+                new String[]{h}, null, null, null, "1");
+        try { return c.moveToFirst() ? account(c) : null; }
+        finally { c.close(); }
+    }
+
     List<Account> listAccounts() {
         ArrayList<Account> out = new ArrayList<>();
         Cursor c = getReadableDatabase().query("accounts", null, null, null, null, null, "id ASC");
