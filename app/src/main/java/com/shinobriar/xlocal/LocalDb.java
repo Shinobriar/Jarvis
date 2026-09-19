@@ -168,10 +168,38 @@ final class LocalDb extends SQLiteOpenHelper {
         return out;
     }
 
-    List<Account> searchAccounts(String q) {
+    boolean canSeeAccount(long viewerId, long targetId) {
+        if (viewerId == targetId) return true;
+        Account target = getAccount(targetId);
+        if (target == null) return false;
+        if (!target.isPrivate) return true;
+        // In this simulator, a private account grants visibility by following the viewer back.
+        return isFollowing(targetId, viewerId);
+    }
+
+    List<Account> listVisibleAccounts(long viewerId) {
+        ArrayList<Account> out = new ArrayList<>();
+        String sql = "SELECT a.* FROM accounts a WHERE a.private=0 OR a.id=? OR EXISTS " +
+                "(SELECT 1 FROM follows vf WHERE vf.follower_id=a.id AND vf.following_id=?) " +
+                "ORDER BY a.id ASC";
+        Cursor c = getReadableDatabase().rawQuery(sql, new String[]{String.valueOf(viewerId), String.valueOf(viewerId)});
+        try {
+            while (c.moveToNext()) out.add(account(c));
+        } finally {
+            c.close();
+        }
+        return out;
+    }
+
+    List<Account> searchAccounts(String q, long viewerId) {
         ArrayList<Account> out = new ArrayList<>();
         String like = "%" + q + "%";
-        Cursor c = getReadableDatabase().query("accounts", null, "name LIKE ? OR handle LIKE ? OR bio LIKE ?", new String[]{like, like, like}, null, null, "name COLLATE NOCASE ASC", "40");
+        String sql = "SELECT a.* FROM accounts a WHERE (a.name LIKE ? OR a.handle LIKE ? OR a.bio LIKE ?) " +
+                "AND (a.private=0 OR a.id=? OR EXISTS " +
+                "(SELECT 1 FROM follows vf WHERE vf.follower_id=a.id AND vf.following_id=?)) " +
+                "ORDER BY a.name COLLATE NOCASE ASC LIMIT 40";
+        Cursor c = getReadableDatabase().rawQuery(sql,
+                new String[]{like, like, like, String.valueOf(viewerId), String.valueOf(viewerId)});
         try {
             while (c.moveToNext()) out.add(account(c));
         } finally {
@@ -272,11 +300,33 @@ final class LocalDb extends SQLiteOpenHelper {
         return queryPosts(null, null, "created_at DESC", String.valueOf(limit));
     }
 
-    List<Post> followingPosts(long accountId, int limit) {
-        String sql = "SELECT p.* FROM posts p WHERE p.reply_to IS NULL AND (p.author_id=? OR p.author_id IN " +
-                "(SELECT following_id FROM follows WHERE follower_id=?)) ORDER BY p.created_at DESC LIMIT ?";
+    List<Post> recentVisiblePosts(long viewerId, int limit) {
+        String sql = "SELECT p.* FROM posts p JOIN accounts a ON a.id=p.author_id " +
+                "WHERE a.private=0 OR a.id=? OR EXISTS " +
+                "(SELECT 1 FROM follows vf WHERE vf.follower_id=a.id AND vf.following_id=?) " +
+                "ORDER BY p.created_at DESC LIMIT ?";
         ArrayList<Post> out = new ArrayList<>();
-        Cursor c = getReadableDatabase().rawQuery(sql, new String[]{String.valueOf(accountId), String.valueOf(accountId), String.valueOf(limit)});
+        Cursor c = getReadableDatabase().rawQuery(sql,
+                new String[]{String.valueOf(viewerId), String.valueOf(viewerId), String.valueOf(limit)});
+        try {
+            while (c.moveToNext()) out.add(post(c));
+        } finally {
+            c.close();
+        }
+        return out;
+    }
+
+    List<Post> followingPosts(long accountId, int limit) {
+        String sql = "SELECT p.* FROM posts p JOIN accounts a ON a.id=p.author_id " +
+                "WHERE p.reply_to IS NULL AND (p.author_id=? OR p.author_id IN " +
+                "(SELECT following_id FROM follows WHERE follower_id=?)) " +
+                "AND (a.private=0 OR a.id=? OR EXISTS " +
+                "(SELECT 1 FROM follows vf WHERE vf.follower_id=a.id AND vf.following_id=?)) " +
+                "ORDER BY p.created_at DESC LIMIT ?";
+        ArrayList<Post> out = new ArrayList<>();
+        Cursor c = getReadableDatabase().rawQuery(sql, new String[]{
+                String.valueOf(accountId), String.valueOf(accountId),
+                String.valueOf(accountId), String.valueOf(accountId), String.valueOf(limit)});
         try {
             while (c.moveToNext()) out.add(post(c));
         } finally {
@@ -290,10 +340,49 @@ final class LocalDb extends SQLiteOpenHelper {
         return queryPosts(where, new String[]{String.valueOf(accountId)}, "created_at DESC", "200");
     }
 
-    List<Post> likedPosts(long accountId) {
-        String sql = "SELECT p.* FROM posts p JOIN interactions i ON p.id=i.post_id WHERE i.account_id=? AND i.type='like' ORDER BY i.created_at DESC LIMIT 200";
+    List<Post> profileTimeline(long accountId, long viewerId) {
+        String visible = "(a.private=0 OR a.id=? OR EXISTS " +
+                "(SELECT 1 FROM follows vf WHERE vf.follower_id=a.id AND vf.following_id=?))";
+        String sql =
+                "SELECT p.*, p.created_at AS event_at, 0 AS is_profile_repost, ? AS profile_actor " +
+                "FROM posts p JOIN accounts a ON a.id=p.author_id " +
+                "WHERE p.author_id=? AND p.reply_to IS NULL AND " + visible +
+                " UNION ALL " +
+                "SELECT p.*, i.created_at AS event_at, 1 AS is_profile_repost, ? AS profile_actor " +
+                "FROM interactions i JOIN posts p ON p.id=i.post_id JOIN accounts a ON a.id=p.author_id " +
+                "WHERE i.account_id=? AND i.type='repost' AND p.author_id<>? AND " + visible +
+                " ORDER BY event_at DESC LIMIT 300";
+        String aid = String.valueOf(accountId);
+        String vid = String.valueOf(viewerId);
+        Cursor c = getReadableDatabase().rawQuery(sql, new String[]{
+                aid, aid, vid, vid,
+                aid, aid, aid, vid, vid
+        });
         ArrayList<Post> out = new ArrayList<>();
-        Cursor c = getReadableDatabase().rawQuery(sql, new String[]{String.valueOf(accountId)});
+        try {
+            while (c.moveToNext()) {
+                Post p = post(c);
+                p.profileEventAt = c.getLong(c.getColumnIndexOrThrow("event_at"));
+                p.profileRepost = c.getInt(c.getColumnIndexOrThrow("is_profile_repost")) != 0;
+                p.profileActorId = c.getLong(c.getColumnIndexOrThrow("profile_actor"));
+                out.add(p);
+            }
+        } finally {
+            c.close();
+        }
+        return out;
+    }
+
+    List<Post> likedPosts(long accountId, long viewerId) {
+        String sql = "SELECT p.* FROM posts p JOIN interactions i ON p.id=i.post_id " +
+                "JOIN accounts a ON a.id=p.author_id " +
+                "WHERE i.account_id=? AND i.type='like' AND " +
+                "(a.private=0 OR a.id=? OR EXISTS " +
+                "(SELECT 1 FROM follows vf WHERE vf.follower_id=a.id AND vf.following_id=?)) " +
+                "ORDER BY i.created_at DESC LIMIT 200";
+        ArrayList<Post> out = new ArrayList<>();
+        Cursor c = getReadableDatabase().rawQuery(sql,
+                new String[]{String.valueOf(accountId), String.valueOf(viewerId), String.valueOf(viewerId)});
         try {
             while (c.moveToNext()) out.add(post(c));
         } finally {
@@ -302,12 +391,36 @@ final class LocalDb extends SQLiteOpenHelper {
         return out;
     }
 
-    List<Post> searchPosts(String q) {
-        return queryPosts("body LIKE ?", new String[]{"%" + q + "%"}, "created_at DESC", "100");
+    List<Post> searchPosts(String q, long viewerId) {
+        String sql = "SELECT p.* FROM posts p JOIN accounts a ON a.id=p.author_id " +
+                "WHERE p.body LIKE ? AND (a.private=0 OR a.id=? OR EXISTS " +
+                "(SELECT 1 FROM follows vf WHERE vf.follower_id=a.id AND vf.following_id=?)) " +
+                "ORDER BY p.created_at DESC LIMIT 100";
+        ArrayList<Post> out = new ArrayList<>();
+        Cursor c = getReadableDatabase().rawQuery(sql,
+                new String[]{"%" + q + "%", String.valueOf(viewerId), String.valueOf(viewerId)});
+        try {
+            while (c.moveToNext()) out.add(post(c));
+        } finally {
+            c.close();
+        }
+        return out;
     }
 
-    List<Post> repliesTo(long postId) {
-        return queryPosts("reply_to=?", new String[]{String.valueOf(postId)}, "created_at ASC", "200");
+    List<Post> repliesTo(long postId, long viewerId) {
+        String sql = "SELECT p.* FROM posts p JOIN accounts a ON a.id=p.author_id " +
+                "WHERE p.reply_to=? AND (a.private=0 OR a.id=? OR EXISTS " +
+                "(SELECT 1 FROM follows vf WHERE vf.follower_id=a.id AND vf.following_id=?)) " +
+                "ORDER BY p.created_at ASC LIMIT 200";
+        ArrayList<Post> out = new ArrayList<>();
+        Cursor c = getReadableDatabase().rawQuery(sql,
+                new String[]{String.valueOf(postId), String.valueOf(viewerId), String.valueOf(viewerId)});
+        try {
+            while (c.moveToNext()) out.add(post(c));
+        } finally {
+            c.close();
+        }
+        return out;
     }
 
     private List<Post> queryPosts(String selection, String[] args, String order, String limit) {
@@ -338,6 +451,9 @@ final class LocalDb extends SQLiteOpenHelper {
         p.views = c.getLong(c.getColumnIndexOrThrow("views"));
         p.bookmarks = c.getLong(c.getColumnIndexOrThrow("bookmarks"));
         p.viralBoost = c.getDouble(c.getColumnIndexOrThrow("viral_boost"));
+        p.profileRepost = false;
+        p.profileActorId = p.authorId;
+        p.profileEventAt = p.createdAt;
         return p;
     }
 
