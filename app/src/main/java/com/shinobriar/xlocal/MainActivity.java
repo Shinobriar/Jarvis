@@ -68,6 +68,7 @@ public class MainActivity extends Activity {
     private static final int PICK_POST_MEDIA = 503;
     private static final int EXPORT_UNIVERSE = 504;
     private static final int IMPORT_UNIVERSE = 505;
+    private static final int SAVE_POST_MEDIA = 506;
 
     private static final int SCREEN_HOME = 1;
     private static final int SCREEN_SEARCH = 2;
@@ -92,6 +93,7 @@ public class MainActivity extends Activity {
     private long currentChatId = -1;
 
     private long pendingImageAccountId = -1;
+    private String pendingSaveMediaPath;
     private String composeDraft = "";
     private String composeMediaPath;
     private long composeAuthorId = -1;
@@ -1564,7 +1566,11 @@ public class MainActivity extends Activity {
     }
 
     private void showPostMenu(long postId) {
-        String[] options = {"Copy link", "Quote", "Bookmark", "Director Mode"};
+        Post post = db.getPost(postId);
+        boolean hasMedia = post != null && post.mediaPath != null && new File(post.mediaPath).exists();
+        String[] options = hasMedia
+                ? new String[]{"Copy link", "Quote", "Bookmark", "Save media", "Director Mode"}
+                : new String[]{"Copy link", "Quote", "Bookmark", "Director Mode"};
         new AlertDialog.Builder(this)
                 .setItems(options, (d, which) -> {
                     if (which == 0) showShareMenu(postId);
@@ -1576,9 +1582,32 @@ public class MainActivity extends Activity {
                     } else if (which == 2) {
                         db.toggleInteraction(currentAccountId, postId, "bookmark");
                         refreshCurrent();
-                    } else showDirectorMenu(postId);
+                    } else if (hasMedia && which == 3) {
+                        savePostMedia(post.mediaPath);
+                    } else {
+                        showDirectorMenu(postId);
+                    }
                 })
                 .show();
+    }
+
+    private void savePostMedia(String path) {
+        if (path == null || !new File(path).exists()) {
+            Toast.makeText(this, "That media file is missing", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        pendingSaveMediaPath = path;
+        String ext = ".jpg";
+        int dot = path.lastIndexOf('.');
+        if (dot >= 0 && dot < path.length() - 1) {
+            String candidate = path.substring(dot).toLowerCase(Locale.US);
+            if (candidate.matches("\\.(jpg|jpeg|png|webp|gif)")) ext = candidate;
+        }
+        Intent i = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        i.addCategory(Intent.CATEGORY_OPENABLE);
+        i.setType("image/*");
+        i.putExtra(Intent.EXTRA_TITLE, "x-local-media-" + System.currentTimeMillis() + ext);
+        startActivityForResult(i, SAVE_POST_MEDIA);
     }
 
     private void showShareMenu(long postId) {
@@ -1686,6 +1715,15 @@ public class MainActivity extends Activity {
                     pendingImageAccountId = -1;
                     renderProfile(id);
                 }
+            } else if (requestCode == SAVE_POST_MEDIA && pendingSaveMediaPath != null) {
+                try (InputStream in = new BufferedInputStream(new FileInputStream(pendingSaveMediaPath));
+                     OutputStream out = new BufferedOutputStream(getContentResolver().openOutputStream(uri))) {
+                    byte[] buf = new byte[64 * 1024];
+                    int n;
+                    while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+                }
+                pendingSaveMediaPath = null;
+                Toast.makeText(this, "Media saved", Toast.LENGTH_SHORT).show();
             } else if (requestCode == EXPORT_UNIVERSE) {
                 exportUniverse(uri);
             } else if (requestCode == IMPORT_UNIVERSE) {
