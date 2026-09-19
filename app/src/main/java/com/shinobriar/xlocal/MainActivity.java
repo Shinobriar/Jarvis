@@ -2414,12 +2414,16 @@ public class MainActivity extends Activity {
     }
 
     private void showDirectorMenu(long postId) {
-        String[] options = {"Edit everything", "Make viral", "Duplicate / post as…", "Copy link", "Delete"};
+        String fameLabel = botEngine != null && botEngine.isInstantFameActive()
+                ? "Instant Fame · active…"
+                : "Instant Fame · 5 seconds";
+        String[] options = {"Edit everything", "Make viral", fameLabel, "Duplicate / post as…", "Copy link", "Delete"};
         new AlertDialog.Builder(this)
                 .setTitle("Director Mode")
                 .setItems(options, (d, which) -> {
-                    if (which == 0) showDirectorEdit(postId);
-                    else if (which == 1) {
+                    if (which == 0) {
+                        showDirectorEdit(postId);
+                    } else if (which == 1) {
                         Post p = db.getPost(postId);
                         if (p != null) {
                             p.views = 6_001L + random.nextInt(19_994_000);
@@ -2431,11 +2435,47 @@ public class MainActivity extends Activity {
                             db.updatePostDirector(p);
                             refreshCurrent();
                         }
-                    } else if (which == 2) duplicatePost(postId);
-                    else if (which == 3) showShareMenu(postId);
-                    else if (which == 4) confirmDeletePost(postId);
+                    } else if (which == 2) {
+                        startInstantFame();
+                    } else if (which == 3) {
+                        duplicatePost(postId);
+                    } else if (which == 4) {
+                        showShareMenu(postId);
+                    } else if (which == 5) {
+                        confirmDeletePost(postId);
+                    }
                 })
                 .show();
+    }
+
+    private void startInstantFame() {
+        if (botEngine == null) {
+            Toast.makeText(this, "Bot engine isn't available", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if (botEngine.isInstantFameActive()) {
+            Toast.makeText(this, "Instant Fame is already active", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if (db.botCount() <= 0) {
+            Toast.makeText(this, "Generate at least one AI bot account first", Toast.LENGTH_LONG).show();
+            return;
+        }
+
+        Account target = account(currentAccountId);
+        boolean started = botEngine.startInstantFame(currentAccountId, () -> {
+            Account doneTarget = account(currentAccountId);
+            String name = doneTarget == null ? "the selected account" : "@" + doneTarget.handle;
+            Toast.makeText(this, "Instant Fame finished for " + name, Toast.LENGTH_SHORT).show();
+            refreshCurrent();
+        });
+
+        if (started) {
+            String name = target == null ? "the selected account" : "@" + target.handle;
+            Toast.makeText(this, "Instant Fame started for " + name + " · 5 seconds", Toast.LENGTH_LONG).show();
+        } else {
+            Toast.makeText(this, "Instant Fame couldn't start right now", Toast.LENGTH_SHORT).show();
+        }
     }
 
     private void showDirectorEdit(long postId) {
