@@ -960,12 +960,20 @@ final class LocalDb extends SQLiteOpenHelper {
     }
 
     long saveDraft(long existingId, long authorId, String body, String mediaPath, Long replyTo, Long quoteOf) {
+        return saveDraft(existingId, authorId, body, mediaPath, replyTo, quoteOf, "", null, 0);
+    }
+
+    long saveDraft(long existingId, long authorId, String body, String mediaPath, Long replyTo, Long quoteOf,
+                   String location, List<String> pollOptions, long scheduledAt) {
         ContentValues v = new ContentValues();
         v.put("author_id", authorId);
         v.put("body", body == null ? "" : body);
         if (mediaPath == null) v.putNull("media_path"); else v.put("media_path", mediaPath);
         if (replyTo == null) v.putNull("reply_to"); else v.put("reply_to", replyTo);
         if (quoteOf == null) v.putNull("quote_of"); else v.put("quote_of", quoteOf);
+        v.put("location", location == null ? "" : location.trim());
+        v.put("poll_options", encodePollOptions(pollOptions));
+        v.put("scheduled_at", Math.max(0, scheduledAt));
         v.put("created_at", System.currentTimeMillis());
         SQLiteDatabase db = getWritableDatabase();
         if (existingId > 0) {
@@ -1005,6 +1013,10 @@ final class LocalDb extends SQLiteOpenHelper {
         d.replyTo = c.isNull(r) ? null : c.getLong(r);
         int q = c.getColumnIndexOrThrow("quote_of");
         d.quoteOf = c.isNull(q) ? null : c.getLong(q);
+        d.location = c.getString(c.getColumnIndexOrThrow("location"));
+        List<String> options = decodePollOptions(c.getString(c.getColumnIndexOrThrow("poll_options")));
+        d.pollOptions = options.toArray(new String[0]);
+        d.scheduledAt = c.getLong(c.getColumnIndexOrThrow("scheduled_at"));
         d.createdAt = c.getLong(c.getColumnIndexOrThrow("created_at"));
         return d;
     }
