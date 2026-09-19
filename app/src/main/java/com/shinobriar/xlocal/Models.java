@@ -12,6 +12,13 @@ final class Account {
     boolean isPrivate;
     long displayFollowers;
     long displayFollowing;
+    String website;
+    String location;
+    String birthDate;
+    long createdAt;
+    boolean isBot;
+    long botNextAt;
+    String botPersona;
 }
 
 final class Post {
@@ -50,5 +57,16 @@ final class DirectMessage {
     long senderId;
     long receiverId;
     String body;
+    long createdAt;
+}
+
+
+final class DraftPost {
+    long id;
+    long authorId;
+    String body;
+    String mediaPath;
+    Long replyTo;
+    Long quoteOf;
     long createdAt;
 }
