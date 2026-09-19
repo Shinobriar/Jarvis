@@ -161,6 +161,12 @@ final class LocalDb extends SQLiteOpenHelper {
         v.put("private", a.isPrivate ? 1 : 0);
         v.put("display_followers", a.displayFollowers);
         v.put("display_following", a.displayFollowing);
+        v.put("website", a.website == null ? "" : a.website);
+        v.put("location", a.location == null ? "" : a.location);
+        v.put("birth_date", a.birthDate == null ? "" : a.birthDate);
+        v.put("is_bot", a.isBot ? 1 : 0);
+        v.put("bot_next_at", a.botNextAt);
+        v.put("bot_persona", a.botPersona == null ? "" : a.botPersona);
         getWritableDatabase().update("accounts", v, "id=?", new String[]{String.valueOf(a.id)});
     }
 
@@ -245,6 +251,13 @@ final class LocalDb extends SQLiteOpenHelper {
         a.isPrivate = c.getInt(c.getColumnIndexOrThrow("private")) != 0;
         a.displayFollowers = c.getLong(c.getColumnIndexOrThrow("display_followers"));
         a.displayFollowing = c.getLong(c.getColumnIndexOrThrow("display_following"));
+        a.website = c.getString(c.getColumnIndexOrThrow("website"));
+        a.location = c.getString(c.getColumnIndexOrThrow("location"));
+        a.birthDate = c.getString(c.getColumnIndexOrThrow("birth_date"));
+        a.createdAt = c.getLong(c.getColumnIndexOrThrow("created_at"));
+        a.isBot = c.getInt(c.getColumnIndexOrThrow("is_bot")) != 0;
+        a.botNextAt = c.getLong(c.getColumnIndexOrThrow("bot_next_at"));
+        a.botPersona = c.getString(c.getColumnIndexOrThrow("bot_persona"));
         return a;
     }
 
