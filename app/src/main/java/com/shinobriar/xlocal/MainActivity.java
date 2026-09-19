@@ -1843,12 +1843,12 @@ public class MainActivity extends Activity {
                     else if (which == 1) {
                         Post p = db.getPost(postId);
                         if (p != null) {
-                            p.views = Math.max(p.views, 2_400_000);
-                            p.likes = Math.max(p.likes, 184_000);
-                            p.reposts = Math.max(p.reposts, 27_000);
-                            p.replies = Math.max(p.replies, 6_800);
-                            p.bookmarks = Math.max(p.bookmarks, 31_000);
-                            p.viralBoost = Math.max(p.viralBoost, 400_000);
+                            p.views = 6_001L + random.nextInt(19_994_000);
+                            p.likes = 6_001L + random.nextInt(494_000);
+                            p.reposts = 6_001L + random.nextInt(194_000);
+                            p.replies = 6_001L + random.nextInt(94_000);
+                            p.bookmarks = 6_001L + random.nextInt(244_000);
+                            p.viralBoost = 6_001L + random.nextInt(994_000);
                             db.updatePostDirector(p);
                             refreshCurrent();
                         }
