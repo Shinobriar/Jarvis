@@ -1545,7 +1545,7 @@ public class MainActivity extends Activity {
         draftsButton.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(40)));
         top.addView(draftsButton);
 
-        TextView postButton = tv(replyTo == null ? "Post" : "Reply", 15, Color.WHITE, true);
+        TextView postButton = tv(composeScheduledAt > System.currentTimeMillis() ? "Schedule" : (replyTo == null ? "Post" : "Reply"), 15, Color.WHITE, true);
         postButton.setGravity(Gravity.CENTER);
         postButton.setPadding(dp(18), 0, dp(18), 0);
         postButton.setBackground(XUi.rounded(XUi.BLUE, 999, this));
@@ -1826,7 +1826,8 @@ public class MainActivity extends Activity {
         draftsButton.setOnClickListener(v -> {
             composeDraft = body.getText().toString();
             if (hasComposerContent(composeDraft, quoteOf)) {
-                activeDraftId = db.saveDraft(activeDraftId, composeAuthorId, composeDraft, composeMediaPath, replyTo, quoteOf);
+                activeDraftId = db.saveDraft(activeDraftId, composeAuthorId, composeDraft, composeMediaPath, replyTo, quoteOf,
+                        composeLocation, composePollOptions, composeScheduledAt);
             }
             d.dismiss();
             renderDrafts();
@@ -1835,11 +1836,25 @@ public class MainActivity extends Activity {
         postButton.setOnClickListener(v -> {
             String text = body.getText().toString().trim();
             if (!hasComposerContent(text, quoteOf)) return;
-            db.insertPost(composeAuthorId, text, composeMediaPath, replyTo, quoteOf);
+
+            if (composeScheduledAt > System.currentTimeMillis()) {
+                long when = composeScheduledAt;
+                db.schedulePost(composeAuthorId, text, composeMediaPath, replyTo, quoteOf,
+                        composeLocation, composePollOptions, when);
+                scheduleRefresh(when);
+                Toast.makeText(this, "Post scheduled for " +
+                        new SimpleDateFormat("MMM d · HH:mm", Locale.getDefault()).format(new Date(when)),
+                        Toast.LENGTH_LONG).show();
+            } else {
+                db.insertPostWithExtras(composeAuthorId, text, composeMediaPath, replyTo, quoteOf,
+                        composeLocation, composePollOptions);
+            }
+
+            boolean wasScheduled = composeScheduledAt > System.currentTimeMillis();
             if (activeDraftId > 0) db.deleteDraft(activeDraftId);
             resetComposerState();
             d.dismiss();
-            if (replyTo != null) renderPost(replyTo); else renderHome();
+            if (replyTo != null && !wasScheduled) renderPost(replyTo); else renderHome();
         });
 
         d.setContentView(root);
@@ -1851,6 +1866,99 @@ public class MainActivity extends Activity {
             w.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         }
         body.requestFocus();
+    }
+
+    private void showPollComposer(Long replyTo, Long quoteOf) {
+        LinearLayout form = dialogForm();
+        EditText o1 = field("Option 1", false);
+        EditText o2 = field("Option 2", false);
+        EditText o3 = field("Option 3 (optional)", false);
+        EditText o4 = field("Option 4 (optional)", false);
+        if (composePollOptions.size() > 0) o1.setText(composePollOptions.get(0));
+        if (composePollOptions.size() > 1) o2.setText(composePollOptions.get(1));
+        if (composePollOptions.size() > 2) o3.setText(composePollOptions.get(2));
+        if (composePollOptions.size() > 3) o4.setText(composePollOptions.get(3));
+        form.addView(o1); form.addView(o2); form.addView(o3); form.addView(o4);
+
+        new AlertDialog.Builder(this)
+                .setTitle("Create poll")
+                .setView(form)
+                .setNegativeButton("Cancel", (d,w) -> showComposer(replyTo, quoteOf))
+                .setNeutralButton("Remove poll", (d,w) -> {
+                    composePollOptions.clear();
+                    showComposer(replyTo, quoteOf);
+                })
+                .setPositiveButton("Done", (d,w) -> {
+                    ArrayList<String> opts = new ArrayList<>();
+                    for (EditText e : new EditText[]{o1,o2,o3,o4}) {
+                        String value = e.getText().toString().trim();
+                        if (!value.isEmpty()) opts.add(value);
+                    }
+                    if (opts.size() < 2) {
+                        Toast.makeText(this, "A poll needs at least two options", Toast.LENGTH_SHORT).show();
+                    } else {
+                        composePollOptions.clear();
+                        composePollOptions.addAll(opts.subList(0, Math.min(4, opts.size())));
+                    }
+                    showComposer(replyTo, quoteOf);
+                }).show();
+    }
+
+    private void showLocationComposer(Long replyTo, Long quoteOf) {
+        EditText field = field("Location", false);
+        field.setText(composeLocation == null ? "" : composeLocation);
+        new AlertDialog.Builder(this)
+                .setTitle("Add location")
+                .setView(field)
+                .setNegativeButton("Cancel", (d,w) -> showComposer(replyTo, quoteOf))
+                .setNeutralButton("Remove", (d,w) -> {
+                    composeLocation = "";
+                    showComposer(replyTo, quoteOf);
+                })
+                .setPositiveButton("Add", (d,w) -> {
+                    composeLocation = field.getText().toString().trim();
+                    showComposer(replyTo, quoteOf);
+                }).show();
+    }
+
+    private void showScheduleComposer(Long replyTo, Long quoteOf) {
+        Calendar cal = Calendar.getInstance();
+        if (composeScheduledAt > System.currentTimeMillis()) cal.setTimeInMillis(composeScheduledAt);
+        else cal.add(Calendar.MINUTE, 10);
+
+        DatePickerDialog date = new DatePickerDialog(this, (view, year, month, day) -> {
+            Calendar chosen = Calendar.getInstance();
+            chosen.setTimeInMillis(cal.getTimeInMillis());
+            chosen.set(Calendar.YEAR, year);
+            chosen.set(Calendar.MONTH, month);
+            chosen.set(Calendar.DAY_OF_MONTH, day);
+
+            TimePickerDialog time = new TimePickerDialog(this, (tp, hour, minute) -> {
+                chosen.set(Calendar.HOUR_OF_DAY, hour);
+                chosen.set(Calendar.MINUTE, minute);
+                chosen.set(Calendar.SECOND, 0);
+                chosen.set(Calendar.MILLISECOND, 0);
+                if (chosen.getTimeInMillis() <= System.currentTimeMillis()) {
+                    Toast.makeText(this, "Choose a future time", Toast.LENGTH_SHORT).show();
+                    composeScheduledAt = 0L;
+                } else {
+                    composeScheduledAt = chosen.getTimeInMillis();
+                }
+                showComposer(replyTo, quoteOf);
+            }, cal.get(Calendar.HOUR_OF_DAY), cal.get(Calendar.MINUTE), true);
+            time.setOnCancelListener(d -> showComposer(replyTo, quoteOf));
+            time.show();
+        }, cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH));
+        date.setOnCancelListener(d -> showComposer(replyTo, quoteOf));
+        date.show();
+    }
+
+    private void scheduleRefresh(long when) {
+        long delay = Math.max(0, when - System.currentTimeMillis() + 250);
+        uiHandler.postDelayed(() -> {
+            int published = db.publishDueScheduled();
+            if (published > 0 && !isFinishing()) refreshCurrent();
+        }, delay);
     }
 
     private XUi.IconView composerTool(int type) {
@@ -1865,6 +1973,7 @@ public class MainActivity extends Activity {
     private boolean hasComposerContent(String text, Long quoteOf) {
         return (text != null && !text.trim().isEmpty())
                 || (composeMediaPath != null && !composeMediaPath.isEmpty())
+                || !composePollOptions.isEmpty()
                 || quoteOf != null;
     }
 
@@ -1885,7 +1994,8 @@ public class MainActivity extends Activity {
                     d.dismiss();
                 })
                 .setPositiveButton("Save draft", (x,w) -> {
-                    db.saveDraft(activeDraftId, composeAuthorId, composeDraft, composeMediaPath, replyTo, quoteOf);
+                    db.saveDraft(activeDraftId, composeAuthorId, composeDraft, composeMediaPath, replyTo, quoteOf,
+                            composeLocation, composePollOptions, composeScheduledAt);
                     resetComposerState();
                     d.dismiss();
                 }).show();
@@ -1896,6 +2006,9 @@ public class MainActivity extends Activity {
         composeMediaPath = null;
         composeReplyTo = null;
         composeQuoteOf = null;
+        composeLocation = "";
+        composePollOptions.clear();
+        composeScheduledAt = 0L;
         composeAuthorId = currentAccountId;
         activeDraftId = -1;
     }
@@ -1943,6 +2056,10 @@ public class MainActivity extends Activity {
                     composeMediaPath = load.mediaPath;
                     composeReplyTo = load.replyTo;
                     composeQuoteOf = load.quoteOf;
+                    composeLocation = load.location == null ? "" : load.location;
+                    composePollOptions.clear();
+                    if (load.pollOptions != null) Collections.addAll(composePollOptions, load.pollOptions);
+                    composeScheduledAt = load.scheduledAt;
                     showComposer(load.replyTo, load.quoteOf);
                 });
                 row.setOnLongClickListener(v -> {
