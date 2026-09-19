@@ -638,6 +638,8 @@ public class MainActivity extends Activity {
             content.addView(body);
         }
 
+        addPostExtras(content, p, false);
+
         if (p.mediaPath != null && new File(p.mediaPath).exists()) {
             ImageView image = new ImageView(this);
             image.setScaleType(ImageView.ScaleType.CENTER_CROP);
@@ -740,6 +742,8 @@ public class MainActivity extends Activity {
             card.addView(body);
         }
 
+        addPostExtras(card, p, true);
+
         if (p.mediaPath != null && new File(p.mediaPath).exists()) {
             ImageView image = new ImageView(this);
             image.setScaleType(ImageView.ScaleType.CENTER_CROP);
@@ -831,6 +835,66 @@ public class MainActivity extends Activity {
         card.addView(body);
         card.setOnClickListener(v -> renderPost(q.id));
         return card;
+    }
+
+    private void addPostExtras(LinearLayout parent, Post p, boolean detail) {
+        if (p.location != null && !p.location.trim().isEmpty()) {
+            LinearLayout loc = hbox();
+            loc.setPadding(0, dp(2), 0, dp(7));
+            XUi.IconView icon = new XUi.IconView(this, XUi.IconView.LOCATION, XUi.BLUE);
+            icon.setLayoutParams(new LinearLayout.LayoutParams(dp(18), dp(18)));
+            icon.setPadding(dp(2), dp(2), dp(2), dp(2));
+            loc.addView(icon);
+            TextView text = tv("  " + p.location, detail ? 15 : 13, XUi.BLUE, false);
+            loc.addView(text);
+            parent.addView(loc);
+        }
+
+        if (p.pollOptions != null && p.pollOptions.length >= 2) {
+            parent.addView(pollView(p, detail));
+        }
+    }
+
+    private View pollView(Post p, boolean detail) {
+        LinearLayout box = vbox();
+        box.setPadding(0, dp(2), detail ? 0 : dp(4), dp(8));
+        int myVote = db.pollVoteFor(currentAccountId, p.id);
+        int total = 0;
+        if (p.pollCounts != null) for (int count : p.pollCounts) total += Math.max(0, count);
+
+        for (int i = 0; i < p.pollOptions.length; i++) {
+            final int index = i;
+            int count = p.pollCounts != null && i < p.pollCounts.length ? p.pollCounts[i] : 0;
+            int percent = total <= 0 ? 0 : Math.round(count * 100f / total);
+
+            String label;
+            if (myVote >= 0) {
+                label = (index == myVote ? "✓ " : "") + p.pollOptions[i] + "   " + percent + "%";
+            } else {
+                label = p.pollOptions[i];
+            }
+
+            TextView option = tv(label, detail ? 15 : 13, myVote >= 0 && index == myVote ? XUi.BLUE : pal.fg, myVote >= 0 && index == myVote);
+            option.setPadding(dp(12), dp(detail ? 10 : 8), dp(12), dp(detail ? 10 : 8));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            lp.setMargins(0, dp(3), 0, dp(3));
+            option.setLayoutParams(lp);
+            option.setBackground(XUi.stroked(Color.TRANSPARENT, myVote >= 0 && index == myVote ? XUi.BLUE : pal.border, 999, this));
+
+            if (myVote < 0) {
+                option.setOnClickListener(v -> {
+                    if (db.votePoll(currentAccountId, p.id, index)) {
+                        refreshCurrent();
+                    }
+                });
+            }
+            box.addView(option);
+        }
+
+        TextView votes = tv(formatCount(total) + (total == 1 ? " vote" : " votes"), 12, pal.secondary, false);
+        votes.setPadding(dp(3), dp(4), 0, 0);
+        box.addView(votes);
+        return box;
     }
 
     private LinearLayout actionRow(Post p) {
