@@ -717,6 +717,50 @@ final class LocalDb extends SQLiteOpenHelper {
         return out;
     }
 
+    int threadReplyCount(long rootPostId, long viewerId) {
+        String sql =
+                "WITH RECURSIVE thread(id,depth) AS (" +
+                " SELECT p.id,1 FROM posts p JOIN accounts a ON a.id=p.author_id " +
+                " WHERE p.reply_to=? AND (a.private=0 OR a.id=? OR EXISTS " +
+                " (SELECT 1 FROM follows vf WHERE vf.follower_id=a.id AND vf.following_id=?)) " +
+                " UNION ALL " +
+                " SELECT child.id,thread.depth+1 FROM posts child JOIN thread ON child.reply_to=thread.id " +
+                " JOIN accounts a ON a.id=child.author_id " +
+                " WHERE a.private=0 OR a.id=? OR EXISTS " +
+                " (SELECT 1 FROM follows vf WHERE vf.follower_id=a.id AND vf.following_id=?)" +
+                ") SELECT COUNT(*) FROM thread";
+        return (int) DatabaseUtils.longForQuery(getReadableDatabase(), sql, new String[]{
+                String.valueOf(rootPostId), String.valueOf(viewerId), String.valueOf(viewerId),
+                String.valueOf(viewerId), String.valueOf(viewerId)
+        });
+    }
+
+    List<Post> threadReplies(long rootPostId, long viewerId, int limit) {
+        String sql =
+                "WITH RECURSIVE thread(id,depth) AS (" +
+                " SELECT p.id,1 FROM posts p JOIN accounts a ON a.id=p.author_id " +
+                " WHERE p.reply_to=? AND (a.private=0 OR a.id=? OR EXISTS " +
+                " (SELECT 1 FROM follows vf WHERE vf.follower_id=a.id AND vf.following_id=?)) " +
+                " UNION ALL " +
+                " SELECT child.id,thread.depth+1 FROM posts child JOIN thread ON child.reply_to=thread.id " +
+                " JOIN accounts a ON a.id=child.author_id " +
+                " WHERE a.private=0 OR a.id=? OR EXISTS " +
+                " (SELECT 1 FROM follows vf WHERE vf.follower_id=a.id AND vf.following_id=?)" +
+                ") SELECT p.*,thread.depth AS thread_depth FROM thread JOIN posts p ON p.id=thread.id " +
+                " ORDER BY p.created_at ASC LIMIT ?";
+        ArrayList<Post> out = new ArrayList<>();
+        Cursor c = getReadableDatabase().rawQuery(sql, new String[]{
+                String.valueOf(rootPostId), String.valueOf(viewerId), String.valueOf(viewerId),
+                String.valueOf(viewerId), String.valueOf(viewerId), String.valueOf(Math.max(1, limit))
+        });
+        try {
+            while (c.moveToNext()) out.add(post(c));
+        } finally {
+            c.close();
+        }
+        return out;
+    }
+
     List<Post> repliesTo(long postId, long viewerId) {
         String sql = "SELECT p.* FROM posts p JOIN accounts a ON a.id=p.author_id " +
                 "WHERE p.reply_to=? AND (a.private=0 OR a.id=? OR EXISTS " +
@@ -765,6 +809,8 @@ final class LocalDb extends SQLiteOpenHelper {
         List<String> poll = decodePollOptions(c.getString(c.getColumnIndexOrThrow("poll_options")));
         p.pollOptions = poll.toArray(new String[0]);
         p.pollCounts = decodePollCounts(c.getString(c.getColumnIndexOrThrow("poll_counts")), p.pollOptions.length);
+        int depthColumn = c.getColumnIndex("thread_depth");
+        p.threadDepth = depthColumn >= 0 ? c.getInt(depthColumn) : 0;
         p.profileRepost = false;
         p.profileActorId = p.authorId;
         p.profileEventAt = p.createdAt;
