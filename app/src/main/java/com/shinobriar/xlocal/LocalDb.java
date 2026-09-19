@@ -167,6 +167,7 @@ final class LocalDb extends SQLiteOpenHelper {
         v.put("is_bot", a.isBot ? 1 : 0);
         v.put("bot_next_at", a.botNextAt);
         v.put("bot_persona", a.botPersona == null ? "" : a.botPersona);
+        if (a.createdAt > 0) v.put("created_at", a.createdAt);
         getWritableDatabase().update("accounts", v, "id=?", new String[]{String.valueOf(a.id)});
     }
 
