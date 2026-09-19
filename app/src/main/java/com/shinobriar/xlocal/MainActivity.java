@@ -1506,6 +1506,194 @@ public class MainActivity extends Activity {
         dialog.show();
     }
 
+    private void showRandomAccountGenerator() {
+        LinearLayout form = dialogForm();
+        EditText amount = field("How many accounts?", false);
+        amount.setInputType(InputType.TYPE_CLASS_NUMBER);
+        amount.setText("10");
+        CheckBox bots = checkbox("Make them Ollama AI bots");
+        bots.setChecked(true);
+        TextView note = tv("Handles are generated like real messy internet handles, not from a fixed name list. You can enter any positive amount; very large batches can take a while.", 13, pal.secondary, false);
+        note.setPadding(0, dp(8), 0, dp(8));
+        form.addView(amount);
+        form.addView(bots);
+        form.addView(note);
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("Generate random accounts")
+                .setView(form)
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Generate", null)
+                .create();
+        dialog.setOnShowListener(v -> dialog.getButton(DialogInterface.BUTTON_POSITIVE).setOnClickListener(x -> {
+            int count;
+            try { count = Integer.parseInt(amount.getText().toString().trim()); }
+            catch (Exception e) { count = 0; }
+            if (count <= 0) {
+                Toast.makeText(this, "Enter a positive amount", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            final int requested = count;
+            final boolean makeBots = bots.isChecked();
+            dialog.dismiss();
+            Toast.makeText(this, "Generating " + requested + " accounts…", Toast.LENGTH_SHORT).show();
+            new Thread(() -> {
+                int made = 0;
+                int attempts = 0;
+                while (made < requested && attempts < requested * 20L + 100) {
+                    attempts++;
+                    try {
+                        String handle = randomHandle();
+                        String name = randomDisplayName(handle);
+                        String persona = randomPersona();
+                        String bio = randomBio(persona);
+                        int[] colors = {0xff7856a8,0xffd05a7a,0xff2f7d6f,0xff536471,0xffc28b32,0xff1d9bf0,0xffa45b35,0xff7a6b5d,0xff536d91};
+                        int color = colors[random.nextInt(colors.length)];
+                        long now = System.currentTimeMillis();
+                        long oldest = new java.util.GregorianCalendar(2011, 0, 1).getTimeInMillis();
+                        long joined = oldest + (long)(random.nextDouble() * Math.max(1L, now - oldest));
+                        long id;
+                        if (makeBots) id = db.createBotAccount(name, handle, bio, persona, color, joined);
+                        else id = db.createAccount(name, handle, bio, color, false, false);
+                        if (random.nextBoolean()) db.toggleFollow(id, currentAccountId);
+                        if (random.nextInt(100) < 35) db.toggleFollow(currentAccountId, id);
+                        made++;
+                    } catch (Exception ignored) {}
+                }
+                final int total = made;
+                runOnUiThread(() -> {
+                    clearAccountCache();
+                    Toast.makeText(this, "Created " + total + " account" + (total == 1 ? "" : "s"), Toast.LENGTH_LONG).show();
+                    if (currentScreen == SCREEN_HOME) renderHome();
+                });
+            }).start();
+        }));
+        dialog.show();
+    }
+
+    private String randomHandle() {
+        String[] a = {"mister","miss","tiny","sleepy","feral","weird","sad","loud","soft","cosmic","moldy","plastic","velvet","electric","local","cursed","noisy","empty","wet","crispy","stupid","evil","holy","baby","rotting","secret","fake","real","silly","lost","midnight","internet","microwave","sewer","parkinglot","basement"};
+        String[] b = {"eggs","moth","frog","rat","pigeon","shrimp","teeth","soup","milk","toast","worm","worms","cloud","goblin","girl","boy","kisser","fan","enjoyer","department","machine","angel","devil","jpeg","pixel","socks","spoon","knife","banana","lemon","moss","bug","bat","cat","dog","fish","toaster","printer","lasagna","chair","orb","ghost","cowboy","wizard"};
+        String left = a[random.nextInt(a.length)];
+        String right = b[random.nextInt(b.length)];
+        String[] patterns = {
+                left + right,
+                left + "_" + right,
+                right + left,
+                "the" + right,
+                "not" + right,
+                right + "kisser",
+                right + "enjoyer",
+                "mister" + right,
+                left + right + (random.nextInt(90) + 10)
+        };
+        return patterns[random.nextInt(patterns.length)].toLowerCase(Locale.US);
+    }
+
+    private String randomDisplayName(String handle) {
+        String[] extras = {"", "", "", "!!!", " online", " archive", " department", " posting", " enjoyer", " hater"};
+        String base = handle.replace("_", " ");
+        if (random.nextBoolean()) {
+            String[] pieces = base.split(" ");
+            StringBuilder b = new StringBuilder();
+            for (String p : pieces) {
+                if (p.isEmpty()) continue;
+                if (b.length() > 0) b.append(" ");
+                b.append(Character.toUpperCase(p.charAt(0))).append(p.substring(1));
+            }
+            base = b.toString();
+        }
+        return base + extras[random.nextInt(extras.length)];
+    }
+
+    private String randomPersona() {
+        String[] moods = {"chronically online","dry and sarcastic","overly earnest","chaotic but friendly","low-energy and blunt","niche hobby obsessed","dramatic over tiny things","quiet lurker who occasionally posts","shitposter with occasional sincerity","rambling and specific","deadpan","enthusiastic and easily distracted"};
+        String[] interests = {"music","movies","games","food","cats","fashion","coding","bad memes","art","football","anime","books","internet drama","photography","random facts","nothing in particular","old tech","horror","pop culture","cars","space","sleep"};
+        return moods[random.nextInt(moods.length)] + ", mostly posts about " + interests[random.nextInt(interests.length)];
+    }
+
+    private String randomBio(String persona) {
+        String[] bits = {"unfortunately online","i post and then regret it","no thoughts just posting","probably awake","professional nobody","do not perceive me","normal about things","posting through it","made of bad opinions","here for no reason","certified yapper","lurking mostly","internet resident"};
+        if (random.nextInt(100) < 35) return bits[random.nextInt(bits.length)] + " · " + persona;
+        return bits[random.nextInt(bits.length)];
+    }
+
+    private void showBotSettings() {
+        LinearLayout form = dialogForm();
+        CheckBox enabled = checkbox("Enable AI bot activity");
+        enabled.setChecked(prefs.getBoolean("bots_enabled", false));
+        EditText url = field("Ollama URL, e.g. http://192.168.1.50:11434", false);
+        url.setText(prefs.getString("ollama_url", ""));
+        EditText model = field("Ollama model", false);
+        model.setText(prefs.getString("ollama_model", "gemma3:4b"));
+        EditText min = field("Minimum seconds between actions per bot", false);
+        min.setInputType(InputType.TYPE_CLASS_NUMBER);
+        min.setText(String.valueOf(prefs.getInt("bot_min_seconds", 120)));
+        EditText max = field("Maximum seconds between actions per bot", false);
+        max.setInputType(InputType.TYPE_CLASS_NUMBER);
+        max.setText(String.valueOf(prefs.getInt("bot_max_seconds", 1200)));
+
+        TextView helper = tv("Bots act at independent random times. Text posts/replies/quotes/DMs come from Ollama; likes, reposts, follows, bookmarks and views are local. For a PC Ollama server, expose it to your LAN (for example OLLAMA_HOST=0.0.0.0:11434) and use the PC's LAN IP here.", 13, pal.secondary, false);
+        helper.setPadding(0, dp(8), 0, dp(8));
+        TextView status = tv("AI bot accounts: " + db.botCount(), 14, pal.fg, true);
+        String last = prefs.getString("ollama_last_error", "");
+        TextView lastError = tv(last.isEmpty() ? "No Ollama error recorded." : "Last Ollama error: " + last, 12, pal.secondary, false);
+        lastError.setPadding(0, dp(5), 0, dp(8));
+        TextView test = pill("Test Ollama connection", false);
+
+        form.addView(enabled);
+        form.addView(url);
+        form.addView(model);
+        form.addView(min);
+        form.addView(max);
+        form.addView(helper);
+        form.addView(status);
+        form.addView(lastError);
+        form.addView(test);
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("Bot settings")
+                .setView(form)
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Save", null)
+                .create();
+
+        Runnable persist = () -> {
+            int minSec, maxSec;
+            try { minSec = Math.max(15, Integer.parseInt(min.getText().toString().trim())); } catch (Exception e) { minSec = 120; }
+            try { maxSec = Math.max(minSec, Integer.parseInt(max.getText().toString().trim())); } catch (Exception e) { maxSec = 1200; }
+            prefs.edit()
+                    .putBoolean("bots_enabled", enabled.isChecked())
+                    .putString("ollama_url", url.getText().toString().trim())
+                    .putString("ollama_model", model.getText().toString().trim())
+                    .putInt("bot_min_seconds", minSec)
+                    .putInt("bot_max_seconds", maxSec)
+                    .apply();
+        };
+
+        dialog.setOnShowListener(v -> {
+            dialog.getButton(DialogInterface.BUTTON_POSITIVE).setOnClickListener(x -> {
+                persist.run();
+                dialog.dismiss();
+                if (botEngine != null) botEngine.start();
+            });
+            test.setOnClickListener(x -> {
+                persist.run();
+                test.setEnabled(false);
+                test.setText("Testing…");
+                new Thread(() -> {
+                    String result = BotEngine.testOllama(url.getText().toString(), model.getText().toString());
+                    runOnUiThread(() -> {
+                        test.setEnabled(true);
+                        test.setText("Test Ollama connection");
+                        new AlertDialog.Builder(this).setTitle("Ollama").setMessage(result).setPositiveButton("OK", null).show();
+                    });
+                }).start();
+            });
+        });
+        dialog.show();
+    }
+
     private void showEditAccount(long id) {
         Account a = db.getAccount(id);
         if (a == null) return;
