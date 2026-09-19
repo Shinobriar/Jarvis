@@ -3339,7 +3339,12 @@ public class MainActivity extends Activity {
     private void pickImage(int request) {
         Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         i.addCategory(Intent.CATEGORY_OPENABLE);
-        i.setType("image/*");
+        if (request == PICK_POST_MEDIA) {
+            i.setType("*/*");
+            i.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"image/*", "video/*"});
+        } else {
+            i.setType("image/*");
+        }
         startActivityForResult(i, request);
     }
 
@@ -3391,8 +3396,7 @@ public class MainActivity extends Activity {
                 Bitmap bitmap = data == null || data.getExtras() == null ? null
                         : (Bitmap) data.getExtras().get("data");
                 if (bitmap == null) throw new Exception("Camera did not return an image");
-                composeMediaPath = saveBitmapToInternal(bitmap);
-                showComposer(composeReplyTo, composeQuoteOf);
+                showPostImageEditor(bitmap, null, composeReplyTo, composeQuoteOf);
                 return;
             }
 
@@ -3406,8 +3410,21 @@ public class MainActivity extends Activity {
             Uri uri = data.getData();
             if (requestCode == PICK_AVATAR || requestCode == PICK_BANNER || requestCode == PICK_POST_MEDIA || requestCode == PICK_GIF_MEDIA) {
                 if (requestCode == PICK_POST_MEDIA) {
-                    composeMediaPath = copyImageToInternal(uri);
-                    showComposer(composeReplyTo, composeQuoteOf);
+                    String mime = getContentResolver().getType(uri);
+                    if (mime != null && mime.toLowerCase(Locale.US).startsWith("video/")) {
+                        composeMediaPath = copyUriToInternal(uri, suffixForMime(mime));
+                        showComposer(composeReplyTo, composeQuoteOf);
+                    } else if ("image/gif".equalsIgnoreCase(mime)) {
+                        composeMediaPath = copyUriToInternal(uri, ".gif");
+                        showComposer(composeReplyTo, composeQuoteOf);
+                    } else {
+                        Bitmap bitmap;
+                        try (InputStream in = getContentResolver().openInputStream(uri)) {
+                            bitmap = in == null ? null : BitmapFactory.decodeStream(in);
+                        }
+                        if (bitmap == null) throw new Exception("Couldn't decode image");
+                        showPostImageEditor(bitmap, null, composeReplyTo, composeQuoteOf);
+                    }
                 } else if (requestCode == PICK_GIF_MEDIA) {
                     composeMediaPath = copyUriToInternal(uri, ".gif");
                     showComposer(composeReplyTo, composeQuoteOf);
@@ -3436,6 +3453,32 @@ public class MainActivity extends Activity {
                 showComposer(composeReplyTo, composeQuoteOf);
             }
         }
+    }
+
+    private String suffixForMime(String mime) {
+        if (mime == null) return ".media";
+        String m = mime.toLowerCase(Locale.US);
+        if (m.contains("mp4")) return ".mp4";
+        if (m.contains("webm")) return ".webm";
+        if (m.contains("3gpp")) return ".3gp";
+        if (m.contains("quicktime")) return ".mov";
+        if (m.contains("gif")) return ".gif";
+        if (m.contains("png")) return ".png";
+        if (m.contains("webp")) return ".webp";
+        if (m.startsWith("image/")) return ".jpg";
+        return ".media";
+    }
+
+    private boolean isVideoPath(String path) {
+        if (path == null) return false;
+        String p = path.toLowerCase(Locale.US);
+        return p.endsWith(".mp4") || p.endsWith(".webm") || p.endsWith(".3gp") ||
+                p.endsWith(".mov") || p.endsWith(".m4v") || p.endsWith(".mkv");
+    }
+
+    private boolean isEditableImagePath(String path) {
+        if (path == null || isVideoPath(path)) return false;
+        return !path.toLowerCase(Locale.US).endsWith(".gif");
     }
 
     private String copyImageToInternal(Uri uri) throws Exception {
