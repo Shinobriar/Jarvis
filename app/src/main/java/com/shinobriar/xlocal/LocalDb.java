@@ -826,6 +826,13 @@ final class LocalDb extends SQLiteOpenHelper {
         return getWritableDatabase().insertOrThrow("accounts", null, v);
     }
 
+    List<Account> botAccounts() {
+        ArrayList<Account> out = new ArrayList<>();
+        Cursor c = getReadableDatabase().query("accounts", null, "is_bot=1", null, null, null, "id ASC");
+        try { while (c.moveToNext()) out.add(account(c)); } finally { c.close(); }
+        return out;
+    }
+
     List<Account> botsDue(long now, int limit) {
         ArrayList<Account> out = new ArrayList<>();
         Cursor c = getReadableDatabase().query("accounts", null, "is_bot=1 AND bot_next_at<=?",
