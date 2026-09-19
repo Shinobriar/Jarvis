@@ -479,6 +479,9 @@ public class MainActivity extends Activity {
             composeMediaPath = null;
             composeAuthorId = currentAccountId;
             activeDraftId = -1;
+            composeLocation = "";
+            composePollOptions.clear();
+            composeScheduledAt = 0L;
             showComposer(null, null);
         });
         frame.addView(fab);
@@ -781,6 +784,9 @@ public class MainActivity extends Activity {
             composeMediaPath = null;
             composeAuthorId = currentAccountId;
             activeDraftId = -1;
+            composeLocation = "";
+            composePollOptions.clear();
+            composeScheduledAt = 0L;
             showComposer(p.id, null);
         }));
 
@@ -906,6 +912,9 @@ public class MainActivity extends Activity {
             composeMediaPath = null;
             composeAuthorId = currentAccountId;
             activeDraftId = -1;
+            composeLocation = "";
+            composePollOptions.clear();
+            composeScheduledAt = 0L;
             showComposer(p.id, null);
         }));
         boolean reposted = db.hasInteraction(currentAccountId, p.id, "repost");
@@ -1008,6 +1017,9 @@ public class MainActivity extends Activity {
             composeMediaPath = null;
             composeAuthorId = currentAccountId;
             activeDraftId = -1;
+            composeLocation = "";
+            composePollOptions.clear();
+            composeScheduledAt = 0L;
             showComposer(p.id, null);
         });
         shell.addView(XUi.divider(this, pal.border));
@@ -2854,6 +2866,10 @@ public class MainActivity extends Activity {
         composeMediaPath = p.mediaPath;
         composeAuthorId = currentAccountId;
         activeDraftId = -1;
+        composeLocation = p.location == null ? "" : p.location;
+        composePollOptions.clear();
+        if (p.pollOptions != null) Collections.addAll(composePollOptions, p.pollOptions);
+        composeScheduledAt = 0L;
         showComposer(null, p.quoteOf);
     }
 
