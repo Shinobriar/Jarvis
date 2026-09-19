@@ -287,6 +287,24 @@ final class LocalDb extends SQLiteOpenHelper {
         return DatabaseUtils.longForQuery(getReadableDatabase(), "SELECT COUNT(*) FROM follows WHERE follower_id=?", new String[]{String.valueOf(accountId)});
     }
 
+    List<Account> followingAccounts(long accountId) {
+        ArrayList<Account> out = new ArrayList<>();
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT a.* FROM accounts a JOIN follows f ON a.id=f.following_id WHERE f.follower_id=? ORDER BY f.created_at DESC",
+                new String[]{String.valueOf(accountId)});
+        try { while (c.moveToNext()) out.add(account(c)); } finally { c.close(); }
+        return out;
+    }
+
+    List<Account> followerAccounts(long accountId) {
+        ArrayList<Account> out = new ArrayList<>();
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT a.* FROM accounts a JOIN follows f ON a.id=f.follower_id WHERE f.following_id=? ORDER BY f.created_at DESC",
+                new String[]{String.valueOf(accountId)});
+        try { while (c.moveToNext()) out.add(account(c)); } finally { c.close(); }
+        return out;
+    }
+
     private void insertFollowRaw(SQLiteDatabase db, long followerId, long followingId) {
         ContentValues v = new ContentValues();
         v.put("follower_id", followerId);
@@ -372,6 +390,53 @@ final class LocalDb extends SQLiteOpenHelper {
         return out;
     }
 
+    List<Post> timelinePosts(long viewerId, boolean followingOnly, int limit) {
+        String visibleAuthor = "(a.private=0 OR a.id=? OR EXISTS " +
+                "(SELECT 1 FROM follows vf WHERE vf.follower_id=a.id AND vf.following_id=?))";
+        String visibleReposter = "(ra.private=0 OR ra.id=? OR EXISTS " +
+                "(SELECT 1 FROM follows vr WHERE vr.follower_id=ra.id AND vr.following_id=?))";
+        String actorFilterPost = followingOnly
+                ? " AND (p.author_id=? OR p.author_id IN (SELECT following_id FROM follows WHERE follower_id=?))"
+                : "";
+        String actorFilterRepost = followingOnly
+                ? " AND (i.account_id=? OR i.account_id IN (SELECT following_id FROM follows WHERE follower_id=?))"
+                : "";
+
+        String sql =
+                "SELECT p.*, p.created_at AS event_at, 0 AS is_profile_repost, p.author_id AS profile_actor " +
+                "FROM posts p JOIN accounts a ON a.id=p.author_id " +
+                "WHERE p.reply_to IS NULL AND " + visibleAuthor + actorFilterPost +
+                " UNION ALL " +
+                "SELECT p.*, i.created_at AS event_at, 1 AS is_profile_repost, i.account_id AS profile_actor " +
+                "FROM interactions i JOIN posts p ON p.id=i.post_id " +
+                "JOIN accounts a ON a.id=p.author_id JOIN accounts ra ON ra.id=i.account_id " +
+                "WHERE i.type='repost' AND p.reply_to IS NULL AND " + visibleAuthor +
+                " AND " + visibleReposter + actorFilterRepost +
+                " ORDER BY event_at DESC LIMIT ?";
+
+        ArrayList<String> args = new ArrayList<>();
+        String vid = String.valueOf(viewerId);
+        args.add(vid); args.add(vid);
+        if (followingOnly) { args.add(vid); args.add(vid); }
+        args.add(vid); args.add(vid);
+        args.add(vid); args.add(vid);
+        if (followingOnly) { args.add(vid); args.add(vid); }
+        args.add(String.valueOf(limit));
+
+        ArrayList<Post> out = new ArrayList<>();
+        Cursor c = getReadableDatabase().rawQuery(sql, args.toArray(new String[0]));
+        try {
+            while (c.moveToNext()) {
+                Post p = post(c);
+                p.profileEventAt = c.getLong(c.getColumnIndexOrThrow("event_at"));
+                p.profileRepost = c.getInt(c.getColumnIndexOrThrow("is_profile_repost")) != 0;
+                p.profileActorId = c.getLong(c.getColumnIndexOrThrow("profile_actor"));
+                out.add(p);
+            }
+        } finally { c.close(); }
+        return out;
+    }
+
     List<Post> postsByAccount(long accountId, boolean includeReplies) {
         String where = includeReplies ? "author_id=?" : "author_id=? AND reply_to IS NULL";
         return queryPosts(where, new String[]{String.valueOf(accountId)}, "created_at DESC", "200");
@@ -387,13 +452,13 @@ final class LocalDb extends SQLiteOpenHelper {
                 " UNION ALL " +
                 "SELECT p.*, i.created_at AS event_at, 1 AS is_profile_repost, ? AS profile_actor " +
                 "FROM interactions i JOIN posts p ON p.id=i.post_id JOIN accounts a ON a.id=p.author_id " +
-                "WHERE i.account_id=? AND i.type='repost' AND p.author_id<>? AND " + visible +
+                "WHERE i.account_id=? AND i.type='repost' AND " + visible +
                 " ORDER BY event_at DESC LIMIT 300";
         String aid = String.valueOf(accountId);
         String vid = String.valueOf(viewerId);
         Cursor c = getReadableDatabase().rawQuery(sql, new String[]{
                 aid, aid, vid, vid,
-                aid, aid, aid, vid, vid
+                aid, aid, vid, vid
         });
         ArrayList<Post> out = new ArrayList<>();
         try {
@@ -551,6 +616,19 @@ final class LocalDb extends SQLiteOpenHelper {
         return true;
     }
 
+    boolean ensureInteraction(long accountId, long postId, String type) {
+        if (hasInteraction(accountId, postId, type)) return false;
+        return toggleInteraction(accountId, postId, type);
+    }
+
+    void bumpEngagement(long postId, long addViews, long addLikes, long addReposts, long addReplies, long addBookmarks) {
+        getWritableDatabase().execSQL(
+                "UPDATE posts SET views=MAX(0,views+?), likes=MAX(0,likes+?), reposts=MAX(0,reposts+?), " +
+                        "replies=MAX(0,replies+?), bookmarks=MAX(0,bookmarks+?) WHERE id=?",
+                new Object[]{Math.max(0,addViews), Math.max(0,addLikes), Math.max(0,addReposts),
+                        Math.max(0,addReplies), Math.max(0,addBookmarks), postId});
+    }
+
     void addView(long accountId, long postId) {
         SQLiteDatabase db = getWritableDatabase();
         ContentValues v = new ContentValues();
@@ -656,10 +734,111 @@ final class LocalDb extends SQLiteOpenHelper {
                 new String[]{String.valueOf(a), String.valueOf(b), String.valueOf(b), String.valueOf(a)}) > 0;
     }
 
+    void updateMessage(long messageId, long editorAccountId, String body) {
+        ContentValues v = new ContentValues();
+        v.put("body", body == null ? "" : body);
+        getWritableDatabase().update("messages", v, "id=? AND sender_id=?",
+                new String[]{String.valueOf(messageId), String.valueOf(editorAccountId)});
+    }
+
+    void deleteMessage(long messageId, long editorAccountId) {
+        getWritableDatabase().delete("messages", "id=? AND sender_id=?",
+                new String[]{String.valueOf(messageId), String.valueOf(editorAccountId)});
+    }
+
+    long saveDraft(long existingId, long authorId, String body, String mediaPath, Long replyTo, Long quoteOf) {
+        ContentValues v = new ContentValues();
+        v.put("author_id", authorId);
+        v.put("body", body == null ? "" : body);
+        if (mediaPath == null) v.putNull("media_path"); else v.put("media_path", mediaPath);
+        if (replyTo == null) v.putNull("reply_to"); else v.put("reply_to", replyTo);
+        if (quoteOf == null) v.putNull("quote_of"); else v.put("quote_of", quoteOf);
+        v.put("created_at", System.currentTimeMillis());
+        SQLiteDatabase db = getWritableDatabase();
+        if (existingId > 0) {
+            db.update("drafts", v, "id=?", new String[]{String.valueOf(existingId)});
+            return existingId;
+        }
+        return db.insert("drafts", null, v);
+    }
+
+    DraftPost getDraft(long id) {
+        Cursor c = getReadableDatabase().query("drafts", null, "id=?", new String[]{String.valueOf(id)}, null, null, null);
+        try {
+            if (!c.moveToFirst()) return null;
+            return draft(c);
+        } finally { c.close(); }
+    }
+
+    List<DraftPost> drafts(long authorId) {
+        ArrayList<DraftPost> out = new ArrayList<>();
+        Cursor c = getReadableDatabase().query("drafts", null, "author_id=?", new String[]{String.valueOf(authorId)},
+                null, null, "created_at DESC", "200");
+        try { while (c.moveToNext()) out.add(draft(c)); } finally { c.close(); }
+        return out;
+    }
+
+    void deleteDraft(long id) {
+        getWritableDatabase().delete("drafts", "id=?", new String[]{String.valueOf(id)});
+    }
+
+    private DraftPost draft(Cursor c) {
+        DraftPost d = new DraftPost();
+        d.id = c.getLong(c.getColumnIndexOrThrow("id"));
+        d.authorId = c.getLong(c.getColumnIndexOrThrow("author_id"));
+        d.body = c.getString(c.getColumnIndexOrThrow("body"));
+        d.mediaPath = c.getString(c.getColumnIndexOrThrow("media_path"));
+        int r = c.getColumnIndexOrThrow("reply_to");
+        d.replyTo = c.isNull(r) ? null : c.getLong(r);
+        int q = c.getColumnIndexOrThrow("quote_of");
+        d.quoteOf = c.isNull(q) ? null : c.getLong(q);
+        d.createdAt = c.getLong(c.getColumnIndexOrThrow("created_at"));
+        return d;
+    }
+
+    long createBotAccount(String name, String handle, String bio, String persona, int color, long createdAt) {
+        ContentValues v = new ContentValues();
+        v.put("name", name);
+        v.put("handle", normalizeHandle(handle));
+        v.put("bio", bio == null ? "" : bio);
+        v.put("color", color);
+        v.put("verified", 0);
+        v.put("private", 0);
+        v.put("display_followers", -1);
+        v.put("display_following", -1);
+        v.put("website", "");
+        v.put("location", "");
+        v.put("birth_date", "");
+        v.put("is_bot", 1);
+        v.put("bot_next_at", System.currentTimeMillis());
+        v.put("bot_persona", persona == null ? "" : persona);
+        v.put("created_at", createdAt > 0 ? createdAt : System.currentTimeMillis());
+        return getWritableDatabase().insertOrThrow("accounts", null, v);
+    }
+
+    List<Account> botsDue(long now, int limit) {
+        ArrayList<Account> out = new ArrayList<>();
+        Cursor c = getReadableDatabase().query("accounts", null, "is_bot=1 AND bot_next_at<=?",
+                new String[]{String.valueOf(now)}, null, null, "bot_next_at ASC", String.valueOf(limit));
+        try { while (c.moveToNext()) out.add(account(c)); } finally { c.close(); }
+        return out;
+    }
+
+    void scheduleBot(long accountId, long nextAt) {
+        ContentValues v = new ContentValues();
+        v.put("bot_next_at", nextAt);
+        getWritableDatabase().update("accounts", v, "id=? AND is_bot=1", new String[]{String.valueOf(accountId)});
+    }
+
+    int botCount() {
+        return (int) DatabaseUtils.longForQuery(getReadableDatabase(), "SELECT COUNT(*) FROM accounts WHERE is_bot=1", null);
+    }
+
     void resetEverything() {
         SQLiteDatabase db = getWritableDatabase();
         db.beginTransaction();
         try {
+            db.execSQL("DELETE FROM drafts");
             db.execSQL("DELETE FROM messages");
             db.execSQL("DELETE FROM notifications");
             db.execSQL("DELETE FROM interactions");
