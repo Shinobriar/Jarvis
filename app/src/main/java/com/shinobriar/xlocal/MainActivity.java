@@ -764,13 +764,16 @@ public class MainActivity extends Activity {
         shell.addView(scroll);
 
         LinearLayout reply = hbox();
-        reply.setPadding(dp(12), dp(7), dp(12), dp(7));
+        reply.setGravity(Gravity.CENTER_VERTICAL);
+        reply.setPadding(dp(12), dp(8), dp(12), dp(8));
         Account me = account(currentAccountId);
         XUi.AvatarView av = new XUi.AvatarView(this, me);
-        av.setLayoutParams(new LinearLayout.LayoutParams(dp(34), dp(34)));
+        LinearLayout.LayoutParams replyAvatar = new LinearLayout.LayoutParams(dp(42), dp(42));
+        replyAvatar.setMargins(0, 0, dp(10), 0);
+        av.setLayoutParams(replyAvatar);
         reply.addView(av);
         TextView prompt = tv("Post your reply", 15, pal.secondary, false);
-        prompt.setPadding(dp(12), 0, 0, 0);
+        prompt.setGravity(Gravity.CENTER_VERTICAL);
         prompt.setLayoutParams(new LinearLayout.LayoutParams(0, dp(42), 1f));
         reply.addView(prompt);
         reply.setOnClickListener(v -> {
