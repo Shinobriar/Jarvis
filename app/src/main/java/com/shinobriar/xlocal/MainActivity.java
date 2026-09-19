@@ -623,6 +623,7 @@ public class MainActivity extends Activity {
     }
 
     private void renderHome() {
+        rememberBeforeNavigation(SCREEN_HOME);
         db.publishDueScheduled();
         currentScreen = SCREEN_HOME;
         currentProfileId = -1;
@@ -1100,6 +1101,7 @@ public class MainActivity extends Activity {
             renderHome();
             return;
         }
+        rememberBeforeNavigation(SCREEN_POST, postId);
         currentScreen = SCREEN_POST;
         currentPostId = postId;
 
@@ -1164,6 +1166,7 @@ public class MainActivity extends Activity {
             renderHome();
             return;
         }
+        rememberBeforeNavigation(SCREEN_PROFILE, accountId);
         currentScreen = SCREEN_PROFILE;
         currentProfileId = accountId;
         clearAccountCache();
@@ -1341,6 +1344,7 @@ public class MainActivity extends Activity {
             Toast.makeText(this, "Follow lists are available for the account you're currently using", Toast.LENGTH_SHORT).show();
             return;
         }
+        rememberBeforeNavigation(SCREEN_FOLLOW_LIST, accountId, followingList);
         currentScreen = SCREEN_FOLLOW_LIST;
         currentProfileId = accountId;
         currentFollowListFollowing = followingList;
@@ -1372,6 +1376,7 @@ public class MainActivity extends Activity {
     }
 
     private void renderSearch() {
+        rememberBeforeNavigation(SCREEN_SEARCH);
         currentScreen = SCREEN_SEARCH;
         FrameLayout frame = baseFrame();
         LinearLayout shell = vbox();
@@ -1398,6 +1403,8 @@ public class MainActivity extends Activity {
         search.setPadding(dp(16), 0, dp(16), 0);
         search.setBackground(XUi.rounded(pal.surface, 999, this));
         search.setLayoutParams(new LinearLayout.LayoutParams(0, dp(38), 1f));
+        search.setText(currentSearchQuery == null ? "" : currentSearchQuery);
+        search.setSelection(search.getText().length());
         top.addView(search);
         shell.addView(top);
         shell.addView(XUi.divider(this, pal.border));
@@ -1412,7 +1419,10 @@ public class MainActivity extends Activity {
         Runnable update = () -> populateSearch(results, search.getText().toString().trim());
         search.addTextChangedListener(new TextWatcher() {
             public void beforeTextChanged(CharSequence s, int st, int c, int a) {}
-            public void onTextChanged(CharSequence s, int st, int before, int count) { update.run(); }
+            public void onTextChanged(CharSequence s, int st, int before, int count) {
+                currentSearchQuery = s == null ? "" : s.toString();
+                update.run();
+            }
             public void afterTextChanged(Editable e) {}
         });
         update.run();
@@ -1480,6 +1490,7 @@ public class MainActivity extends Activity {
     }
 
     private void renderNotifications() {
+        rememberBeforeNavigation(SCREEN_NOTIFICATIONS);
         currentScreen = SCREEN_NOTIFICATIONS;
         db.markNotificationsRead(currentAccountId);
 
@@ -1550,6 +1561,7 @@ public class MainActivity extends Activity {
     }
 
     private void renderMessages() {
+        rememberBeforeNavigation(SCREEN_MESSAGES);
         currentScreen = SCREEN_MESSAGES;
         FrameLayout frame = baseFrame();
         LinearLayout shell = vbox();
@@ -1587,6 +1599,7 @@ public class MainActivity extends Activity {
             renderMessages();
             return;
         }
+        rememberBeforeNavigation(SCREEN_CHAT, otherId);
         currentScreen = SCREEN_CHAT;
         currentChatId = otherId;
 
@@ -1694,6 +1707,7 @@ public class MainActivity extends Activity {
     }
 
     private void renderBookmarks() {
+        rememberBeforeNavigation(SCREEN_BOOKMARKS);
         currentScreen = SCREEN_BOOKMARKS;
         LinearLayout shell = vbox();
         shell.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
@@ -2026,6 +2040,13 @@ public class MainActivity extends Activity {
         postButton.setAlpha(hasComposerContent(body.getText().toString(), quoteOf) ? 1f : .55f);
 
         close.setOnClickListener(v -> maybeCloseComposer(d, body, replyTo, quoteOf));
+        d.setOnKeyListener((dialog, keyCode, event) -> {
+            if (keyCode == KeyEvent.KEYCODE_BACK && event.getAction() == KeyEvent.ACTION_UP) {
+                maybeCloseComposer(d, body, replyTo, quoteOf);
+                return true;
+            }
+            return false;
+        });
 
         draftsButton.setOnClickListener(v -> {
             composeDraft = body.getText().toString();
@@ -2218,6 +2239,7 @@ public class MainActivity extends Activity {
     }
 
     private void renderDrafts() {
+        rememberBeforeNavigation(SCREEN_DRAFTS);
         currentScreen = SCREEN_DRAFTS;
         LinearLayout shell = vbox();
         shell.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
@@ -3505,11 +3527,7 @@ public class MainActivity extends Activity {
     }
 
     private void goBackFromSubscreen() {
-        if (currentScreen == SCREEN_CHAT) renderMessages();
-        else if (currentScreen == SCREEN_POST) renderHome();
-        else if (currentScreen == SCREEN_FOLLOW_LIST && currentProfileId > 0) renderProfile(currentProfileId);
-        else if (currentScreen == SCREEN_PROFILE || currentScreen == SCREEN_BOOKMARKS || currentScreen == SCREEN_DRAFTS) renderHome();
-        else renderHome();
+        onBackPressed();
     }
 
     private void refreshCurrent() {
