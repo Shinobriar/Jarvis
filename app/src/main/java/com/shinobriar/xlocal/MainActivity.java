@@ -127,6 +127,8 @@ public class MainActivity extends Activity {
     private long currentChatId = -1;
     private long currentMediaPostId = -1;
     private int currentThreadReplyLimit = 10;
+    private int mediaRenderGeneration = 0;
+    private VideoView activeVideoView;
     private boolean currentFollowListFollowing = true;
     private String currentSearchQuery = "";
 
@@ -192,6 +194,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         uiHandler.removeCallbacksAndMessages(null);
+        stopActiveVideo();
         if (botEngine != null) botEngine.shutdown();
         super.onDestroy();
     }
@@ -374,8 +377,25 @@ public class MainActivity extends Activity {
     }
 
     private void setScreen(View root) {
+        if (currentScreen == SCREEN_MEDIA) {
+            Window w = getWindow();
+            w.setStatusBarColor(Color.BLACK);
+            w.setNavigationBarColor(Color.BLACK);
+            w.getDecorView().setSystemUiVisibility(0);
+        } else {
+            stopActiveVideo();
+            applySystemBars();
+        }
         setContentView(root);
         hasRenderedScreen = true;
+    }
+
+    private void stopActiveVideo() {
+        mediaRenderGeneration++;
+        if (activeVideoView != null) {
+            try { activeVideoView.stopPlayback(); } catch (Exception ignored) {}
+            activeVideoView = null;
+        }
     }
 
     private NavState captureNavigationState() {
