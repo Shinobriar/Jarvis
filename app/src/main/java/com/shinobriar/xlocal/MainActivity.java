@@ -1880,12 +1880,29 @@ public class MainActivity extends Activity {
 
             ImageView image = new ImageView(this);
             image.setScaleType(ImageView.ScaleType.CENTER_CROP);
-            setMediaImage(image, composeMediaPath, 1200, 900);
+            setMediaPreviewImage(image, composeMediaPath, 1200, 900);
             image.setBackground(XUi.rounded(pal.surface, 16, this));
             image.setClipToOutline(true);
             image.setOutlineProvider(ViewOutlineProvider.BACKGROUND);
             image.setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
             mediaWrap.addView(image);
+
+            if (isVideoPath(composeMediaPath)) {
+                XUi.IconView play = new XUi.IconView(this, XUi.IconView.PLAY, Color.WHITE);
+                FrameLayout.LayoutParams playp = new FrameLayout.LayoutParams(dp(54), dp(54), Gravity.CENTER);
+                play.setLayoutParams(playp);
+                play.setPadding(dp(14), dp(14), dp(14), dp(14));
+                play.setBackground(XUi.rounded(0xaa000000, 999, this));
+                mediaWrap.addView(play);
+            } else if (isEditableImagePath(composeMediaPath)) {
+                image.setOnClickListener(v -> {
+                    composeDraft = body.getText().toString();
+                    Bitmap edit = decodeScaled(composeMediaPath, 2048, 2048);
+                    String previous = composeMediaPath;
+                    d.dismiss();
+                    showPostImageEditor(edit, previous, replyTo, quoteOf);
+                });
+            }
 
             XUi.IconView remove = new XUi.IconView(this, XUi.IconView.CLOSE, Color.WHITE);
             FrameLayout.LayoutParams rp = new FrameLayout.LayoutParams(dp(34), dp(34), Gravity.RIGHT | Gravity.TOP);
