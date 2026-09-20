@@ -17,6 +17,8 @@ import android.database.sqlite.SQLiteConstraintException;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
+import android.graphics.Rect;
+import android.graphics.SurfaceTexture;
 import android.graphics.ImageDecoder;
 import android.graphics.Typeface;
 import android.media.MediaMetadataRetriever;
@@ -43,6 +45,9 @@ import android.text.style.ForegroundColorSpan;
 import android.provider.MediaStore;
 import android.view.Gravity;
 import android.view.KeyEvent;
+import android.view.MotionEvent;
+import android.view.Surface;
+import android.view.TextureView;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewOutlineProvider;
@@ -128,7 +133,12 @@ public class MainActivity extends Activity {
     private long currentMediaPostId = -1;
     private int currentThreadReplyLimit = 10;
     private int mediaRenderGeneration = 0;
-    private VideoView activeVideoView;
+    private int inlineVideoGeneration = 0;
+    private MediaPlayer activeVideoPlayer;
+    private final ArrayList<MediaPlayer> inlineVideoPlayers = new ArrayList<>();
+    private float gestureDownX;
+    private float gestureDownY;
+    private boolean gestureTracking;
     private boolean currentFollowListFollowing = true;
     private String currentSearchQuery = "";
 
@@ -377,6 +387,7 @@ public class MainActivity extends Activity {
     }
 
     private void setScreen(View root) {
+        releaseInlineVideos();
         if (currentScreen == SCREEN_MEDIA) {
             Window w = getWindow();
             w.setStatusBarColor(Color.BLACK);
@@ -392,10 +403,22 @@ public class MainActivity extends Activity {
 
     private void stopActiveVideo() {
         mediaRenderGeneration++;
-        if (activeVideoView != null) {
-            try { activeVideoView.stopPlayback(); } catch (Exception ignored) {}
-            activeVideoView = null;
+        if (activeVideoPlayer != null) {
+            try { activeVideoPlayer.stop(); } catch (Exception ignored) {}
+            try { activeVideoPlayer.reset(); } catch (Exception ignored) {}
+            try { activeVideoPlayer.release(); } catch (Exception ignored) {}
+            activeVideoPlayer = null;
         }
+    }
+
+    private void releaseInlineVideos() {
+        inlineVideoGeneration++;
+        for (MediaPlayer player : new ArrayList<>(inlineVideoPlayers)) {
+            try { player.stop(); } catch (Exception ignored) {}
+            try { player.reset(); } catch (Exception ignored) {}
+            try { player.release(); } catch (Exception ignored) {}
+        }
+        inlineVideoPlayers.clear();
     }
 
     private NavState captureNavigationState() {
@@ -502,6 +525,64 @@ public class MainActivity extends Activity {
 
         // Only root Home with no history is allowed to leave the app.
         super.onBackPressed();
+    }
+
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent event) {
+        if (event != null) {
+            int action = event.getActionMasked();
+            if (action == MotionEvent.ACTION_DOWN) {
+                gestureDownX = event.getRawX();
+                gestureDownY = event.getRawY();
+                gestureTracking = true;
+            } else if (action == MotionEvent.ACTION_CANCEL) {
+                gestureTracking = false;
+            } else if (action == MotionEvent.ACTION_UP && gestureTracking) {
+                float dx = event.getRawX() - gestureDownX;
+                float dy = event.getRawY() - gestureDownY;
+                gestureTracking = false;
+
+                float threshold = dp(72);
+                boolean horizontal = Math.abs(dx) >= threshold && Math.abs(dx) > Math.abs(dy) * 1.25f;
+                if (horizontal) {
+                    if (currentScreen == SCREEN_HOME && dx > 0 && gestureDownX <= dp(34)
+                            && prefs.getBoolean("swipe_sidebar", true)) {
+                        showAccountSwitcher();
+                        return true;
+                    }
+
+                    int tab = currentMainTabIndex();
+                    if (tab >= 0 && prefs.getBoolean("swipe_tabs", true)) {
+                        if (dx < 0 && tab < 4) {
+                            openMainTab(tab + 1);
+                            return true;
+                        }
+                        if (dx > 0 && tab > 0) {
+                            openMainTab(tab - 1);
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        return super.dispatchTouchEvent(event);
+    }
+
+    private int currentMainTabIndex() {
+        if (currentScreen == SCREEN_HOME) return 0;
+        if (currentScreen == SCREEN_SEARCH) return 1;
+        if (currentScreen == SCREEN_NOTIFICATIONS) return 2;
+        if (currentScreen == SCREEN_MESSAGES) return 3;
+        if (currentScreen == SCREEN_PROFILE && currentProfileId == currentAccountId) return 4;
+        return -1;
+    }
+
+    private void openMainTab(int index) {
+        if (index == 0) renderHome();
+        else if (index == 1) renderSearch();
+        else if (index == 2) renderNotifications();
+        else if (index == 3) renderMessages();
+        else if (index == 4) renderProfile(currentAccountId);
     }
 
     private FrameLayout baseFrame() {
