@@ -151,7 +151,8 @@ final class XUi {
                 VERIFIED=19, PROFILE=20, GLOBE=21, CAMERA=22, GIF=23, POLL=24,
                 LOCATION=25, SCHEDULE=26, PLUS_CIRCLE=27, CALENDAR=28, LINK=29,
                 DRAFTS=30, SETTINGS=31, BALLOON=32, CROP=33, DRAW=34, FILTER=35,
-                PLAY=36, PAUSE=37, SOUND=38, SOUND_OFF=39, MEDIA_EXPAND=40;
+                PLAY=36, PAUSE=37, SOUND=38, SOUND_OFF=39, MEDIA_EXPAND=40,
+                GROUP_ADD=41, PEOPLE_GROUP=42, COMPOSE_DM=43;
 
         private final int type;
         private int color;
@@ -211,6 +212,9 @@ final class XUi {
                 case SOUND: return R.drawable.ic_vector_sound;
                 case SOUND_OFF: return R.drawable.ic_vector_sound_off;
                 case MEDIA_EXPAND: return R.drawable.ic_vector_media_expand;
+                case GROUP_ADD: return R.drawable.ic_vector_group_add;
+                case PEOPLE_GROUP: return R.drawable.ic_vector_people_group_stroke;
+                case COMPOSE_DM: return R.drawable.ic_vector_compose_dm;
                 default: return R.drawable.ic_vector_x;
             }
         }
