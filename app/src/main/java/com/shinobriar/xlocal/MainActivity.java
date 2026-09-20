@@ -2500,6 +2500,313 @@ public class MainActivity extends Activity {
         scroll.post(() -> scroll.fullScroll(View.FOCUS_DOWN));
     }
 
+    private void renderGroupChat(long groupId) {
+        GroupChat group = db.getGroup(groupId);
+        if (group == null || !db.isGroupMember(groupId, currentAccountId)) {
+            renderMessages();
+            return;
+        }
+
+        rememberBeforeNavigation(SCREEN_GROUP_CHAT, groupId);
+        currentScreen = SCREEN_GROUP_CHAT;
+        currentGroupId = groupId;
+
+        LinearLayout root = vbox();
+        root.setLayoutParams(new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+        LinearLayout bar = hbox();
+        bar.setPadding(dp(8), 0, dp(8), 0);
+        bar.setLayoutParams(new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(58)));
+
+        XUi.IconView back = new XUi.IconView(this, XUi.IconView.BACK, pal.fg);
+        back.setLayoutParams(new LinearLayout.LayoutParams(dp(44), dp(44)));
+        back.setPadding(dp(10), dp(10), dp(10), dp(10));
+        back.setOnClickListener(v -> onBackPressed());
+        bar.addView(back);
+
+        View avatar = groupAvatarView(group, 34);
+        LinearLayout.LayoutParams ap = new LinearLayout.LayoutParams(dp(34), dp(34));
+        ap.setMargins(dp(4), 0, dp(10), 0);
+        avatar.setLayoutParams(ap);
+        avatar.setOnClickListener(v -> showGroupInfo(groupId));
+        bar.addView(avatar);
+
+        TextView title = tv(group.name == null || group.name.trim().isEmpty() ? "Group" : group.name,
+                18, pal.fg, true);
+        title.setSingleLine(true);
+        title.setEllipsize(TextUtils.TruncateAt.END);
+        title.setLayoutParams(new LinearLayout.LayoutParams(0, dp(48), 1f));
+        title.setOnClickListener(v -> showGroupInfo(groupId));
+        bar.addView(title);
+
+        XUi.IconView info = new XUi.IconView(this, XUi.IconView.INFO, pal.fg);
+        info.setLayoutParams(new LinearLayout.LayoutParams(dp(44), dp(44)));
+        info.setPadding(dp(9), dp(9), dp(9), dp(9));
+        info.setOnClickListener(v -> showGroupInfo(groupId));
+        bar.addView(info);
+
+        root.addView(bar);
+        root.addView(XUi.divider(this, pal.border));
+
+        LinearLayout messages = vbox();
+        messages.setPadding(dp(12), dp(12), dp(12), dp(12));
+        List<DirectMessage> convo = db.groupConversation(groupId);
+        if (convo.isEmpty()) {
+            messages.addView(emptyState("Start the group conversation",
+                    "Everyone in this local group can see messages sent here."));
+        } else {
+            for (DirectMessage m : convo) messages.addView(groupMessageBubble(m));
+        }
+
+        ScrollView scroll = scrollOf(messages);
+        scroll.setLayoutParams(new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        root.addView(scroll);
+
+        root.addView(XUi.divider(this, pal.border));
+        LinearLayout composer = hbox();
+        composer.setPadding(dp(10), dp(8), dp(10), dp(8));
+
+        EditText input = new EditText(this);
+        input.setSingleLine(false);
+        input.setMaxLines(4);
+        input.setTextSize(15);
+        input.setTextColor(pal.fg);
+        input.setHintTextColor(pal.secondary);
+        input.setHint("Start a message");
+        input.setPadding(dp(14), dp(8), dp(14), dp(8));
+        input.setBackground(XUi.stroked(pal.surface, pal.border, 18, this));
+        input.setLayoutParams(new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        composer.addView(input);
+
+        TextView send = pill("Send", true);
+        LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, dp(38));
+        sp.setMargins(dp(8), 0, 0, 0);
+        send.setLayoutParams(sp);
+        send.setOnClickListener(v -> {
+            String body = input.getText().toString().trim();
+            if (!body.isEmpty()) {
+                db.sendGroupMessage(currentAccountId, groupId, body);
+                renderGroupChat(groupId);
+            }
+        });
+        composer.addView(send);
+        root.addView(composer);
+
+        setScreen(root);
+        scroll.post(() -> scroll.fullScroll(View.FOCUS_DOWN));
+    }
+
+    private View groupMessageBubble(DirectMessage m) {
+        boolean mine = m.senderId == currentAccountId;
+        Account sender = db.getAccount(m.senderId);
+
+        LinearLayout line = hbox();
+        line.setGravity(mine ? Gravity.RIGHT : Gravity.LEFT);
+        line.setPadding(0, dp(4), 0, dp(4));
+
+        if (!mine && sender != null) {
+            XUi.AvatarView avatar = new XUi.AvatarView(this, sender);
+            LinearLayout.LayoutParams ap = new LinearLayout.LayoutParams(dp(30), dp(30));
+            ap.setMargins(0, dp(15), dp(8), 0);
+            avatar.setLayoutParams(ap);
+            avatar.setOnClickListener(v -> renderProfile(sender.id));
+            line.addView(avatar);
+        }
+
+        LinearLayout stack = vbox();
+        stack.setBackgroundColor(Color.TRANSPARENT);
+        stack.setLayoutParams(new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        if (!mine && sender != null) {
+            TextView senderName = tv(sender.name + "  @" + sender.handle, 12, pal.secondary, true);
+            senderName.setPadding(dp(7), 0, dp(7), dp(3));
+            stack.addView(senderName);
+        }
+
+        TextView bubble = tv(m.body, 15, mine ? Color.WHITE : pal.fg, false);
+        bubble.setPadding(dp(13), dp(9), dp(13), dp(9));
+        bubble.setBackground(XUi.rounded(mine ? XUi.BLUE : pal.surface, 18, this));
+        bubble.setMaxWidth(dp(290));
+        if (mine) {
+            bubble.setOnLongClickListener(v -> {
+                showMessageMenu(m);
+                return true;
+            });
+        }
+        stack.addView(bubble);
+        line.addView(stack);
+        return line;
+    }
+
+    private void showGroupInfo(long groupId) {
+        GroupChat group = db.getGroup(groupId);
+        if (group == null) return;
+
+        LinearLayout form = dialogForm();
+
+        LinearLayout hero = hbox();
+        hero.setGravity(Gravity.CENTER_VERTICAL);
+        hero.setPadding(0, 0, 0, dp(10));
+        View avatar = groupAvatarView(group, 56);
+        LinearLayout.LayoutParams ap = new LinearLayout.LayoutParams(dp(56), dp(56));
+        ap.setMargins(0, 0, dp(12), 0);
+        avatar.setLayoutParams(ap);
+        hero.addView(avatar);
+
+        LinearLayout identity = vbox();
+        identity.setLayoutParams(new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        identity.addView(tv(group.name, 18, pal.fg, true));
+        identity.addView(tv(group.memberCount + (group.memberCount == 1 ? " member" : " members"),
+                14, pal.secondary, false));
+        hero.addView(identity);
+        form.addView(hero);
+
+        form.addView(groupInfoAction(XUi.IconView.CAMERA, "Edit group photo", () -> showGroupPhotoOptions(groupId)));
+        form.addView(groupInfoAction(XUi.IconView.PEOPLE_GROUP, "Edit group name", () -> showRenameGroup(groupId)));
+        form.addView(groupInfoAction(XUi.IconView.GROUP_ADD, "Add members", () -> showAddGroupMembers(groupId)));
+        form.addView(groupInfoAction(XUi.IconView.PEOPLE_GROUP, "View members", () -> showGroupMembers(groupId)));
+
+        TextView leave = tv("Leave conversation", 15, 0xffff334b, true);
+        leave.setPadding(dp(12), dp(14), dp(12), dp(14));
+        leave.setOnClickListener(v -> new AlertDialog.Builder(this)
+                .setTitle("Leave this group?")
+                .setMessage("The selected local account will no longer see this group conversation.")
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Leave", (d,w) -> {
+                    db.leaveGroup(groupId, currentAccountId);
+                    renderMessages();
+                }).show());
+        form.addView(leave);
+
+        new AlertDialog.Builder(this)
+                .setTitle("Group info")
+                .setView(form)
+                .setPositiveButton("Done", null)
+                .show();
+    }
+
+    private View groupInfoAction(int iconType, String label, Runnable action) {
+        LinearLayout row = hbox();
+        row.setPadding(dp(8), dp(10), dp(8), dp(10));
+
+        XUi.IconView icon = new XUi.IconView(this, iconType, pal.fg);
+        icon.setLayoutParams(new LinearLayout.LayoutParams(dp(32), dp(32)));
+        icon.setPadding(dp(5), dp(5), dp(5), dp(5));
+        row.addView(icon);
+
+        TextView text = tv(label, 15, pal.fg, false);
+        text.setPadding(dp(10), 0, 0, 0);
+        text.setLayoutParams(new LinearLayout.LayoutParams(
+                0, dp(38), 1f));
+        row.addView(text);
+
+        row.setOnClickListener(v -> action.run());
+        return row;
+    }
+
+    private void showRenameGroup(long groupId) {
+        GroupChat group = db.getGroup(groupId);
+        if (group == null) return;
+        EditText name = field("Group name", false);
+        name.setText(group.name);
+
+        new AlertDialog.Builder(this)
+                .setTitle("Edit group name")
+                .setView(name)
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Save", (d,w) -> {
+                    GroupChat fresh = db.getGroup(groupId);
+                    db.updateGroup(groupId, name.getText().toString(), fresh == null ? null : fresh.avatarPath);
+                    renderGroupChat(groupId);
+                }).show();
+    }
+
+    private void showGroupPhotoOptions(long groupId) {
+        GroupChat group = db.getGroup(groupId);
+        if (group == null) return;
+
+        ArrayList<String> options = new ArrayList<>();
+        options.add("Choose from library");
+        options.add("Take photo");
+        if (group.avatarPath != null && !group.avatarPath.isEmpty()) options.add("Remove current photo");
+
+        new AlertDialog.Builder(this)
+                .setTitle("Group photo")
+                .setItems(options.toArray(new String[0]), (d, which) -> {
+                    if (which == 0) {
+                        pickGroupPhoto(groupId);
+                    } else if (which == 1) {
+                        takeGroupPhoto(groupId);
+                    } else {
+                        db.setGroupAvatar(groupId, null);
+                        renderGroupChat(groupId);
+                    }
+                }).show();
+    }
+
+    private void showAddGroupMembers(long groupId) {
+        List<Account> currentMembers = db.groupMembers(groupId);
+        HashSet<Long> existing = new HashSet<>();
+        for (Account member : currentMembers) existing.add(member.id);
+
+        List<Account> visible = db.listVisibleAccounts(currentAccountId);
+        ArrayList<Account> choices = new ArrayList<>();
+        for (Account a : visible) if (!existing.contains(a.id)) choices.add(a);
+
+        if (choices.isEmpty()) {
+            Toast.makeText(this, "There are no other visible accounts to add", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        String[] labels = new String[choices.size()];
+        boolean[] checked = new boolean[choices.size()];
+        for (int i = 0; i < choices.size(); i++) {
+            Account a = choices.get(i);
+            labels[i] = a.name + "  @" + a.handle;
+        }
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("Add members")
+                .setMultiChoiceItems(labels, checked, (d, which, selected) -> checked[which] = selected)
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Add", null)
+                .create();
+
+        dialog.setOnShowListener(x -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            ArrayList<Long> selected = new ArrayList<>();
+            for (int i = 0; i < checked.length; i++) if (checked[i]) selected.add(choices.get(i).id);
+            if (selected.isEmpty()) {
+                Toast.makeText(this, "Choose at least one account", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            db.addGroupMembers(groupId, selected);
+            dialog.dismiss();
+            renderGroupChat(groupId);
+        }));
+        dialog.show();
+    }
+
+    private void showGroupMembers(long groupId) {
+        List<Account> members = db.groupMembers(groupId);
+        String[] labels = new String[members.size()];
+        for (int i = 0; i < members.size(); i++) {
+            Account a = members.get(i);
+            labels[i] = a.name + "  @" + a.handle;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("Members")
+                .setItems(labels, (d, which) -> renderProfile(members.get(which).id))
+                .setPositiveButton("Done", null)
+                .show();
+    }
+
     private View messageBubble(DirectMessage m) {
         boolean mine = m.senderId == currentAccountId;
         LinearLayout line = hbox();
