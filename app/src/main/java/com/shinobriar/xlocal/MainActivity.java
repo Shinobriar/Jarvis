@@ -2426,14 +2426,6 @@ public class MainActivity extends Activity {
         boolean[] checked = new boolean[choices.size()];
         for (int i = 0; i < choices.size(); i++) labels[i] = choices.get(i).name + "  @" + choices.get(i).handle;
 
-        new AlertDialog.Builder(this)
-                .setTitle("New group")
-                .setMultiChoiceItems(labels, checked, (dialog, which, isChecked) -> checked[which] = isChecked)
-                .setNegativeButton("Cancel", null)
-                .setPositiveButton("Next", null)
-                .create()
-                .setOnShowListener(null);
-
         AlertDialog picker = new AlertDialog.Builder(this)
                 .setTitle("New group")
                 .setMultiChoiceItems(labels, checked, (dialog, which, isChecked) -> checked[which] = isChecked)
