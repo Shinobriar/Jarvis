@@ -3136,27 +3136,16 @@ public class MainActivity extends Activity {
         root.addView(menuLine("Import universe", () -> { d.dismiss(); importUniversePicker(); }));
         root.addView(menuLine("Reset demo universe", () -> { d.dismiss(); confirmReset(); }));
 
-        ScrollView scroll = scrollOf(root);
-
-        final float[] drawerDown = new float[2];
-        scroll.setOnTouchListener((view, event) -> {
-            if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
-                drawerDown[0] = event.getRawX();
-                drawerDown[1] = event.getRawY();
-            } else if (event.getActionMasked() == MotionEvent.ACTION_UP) {
-                float dx = event.getRawX() - drawerDown[0];
-                float dy = event.getRawY() - drawerDown[1];
-                if (dx <= -dp(64) && Math.abs(dx) > Math.abs(dy) * 1.2f) {
-                    float distance = getResources().getDisplayMetrics().widthPixels * 0.88f;
-                    root.animate()
-                            .translationX(-distance)
-                            .setDuration(180)
-                            .withEndAction(d::dismiss)
-                            .start();
-                    return true;
-                }
-            }
-            return false;
+        SwipeDismissScrollView scroll = new SwipeDismissScrollView(this);
+        scroll.setFillViewport(true);
+        scroll.addView(root);
+        scroll.setOnSwipeLeft(() -> {
+            float distance = getResources().getDisplayMetrics().widthPixels * 0.88f;
+            root.animate()
+                    .translationX(-distance)
+                    .setDuration(180)
+                    .withEndAction(d::dismiss)
+                    .start();
         });
 
         d.setContentView(scroll);
