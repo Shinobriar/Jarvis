@@ -5427,7 +5427,11 @@ public class MainActivity extends Activity {
     }
 
     private String timeAgo(long when) {
-        long sec = Math.max(0, (System.currentTimeMillis() - when) / 1000);
+        long now = System.currentTimeMillis();
+        if (when > now + 1000L) {
+            return new SimpleDateFormat("dd MMM yyyy · HH:mm", Locale.getDefault()).format(new Date(when));
+        }
+        long sec = Math.max(0, (now - when) / 1000);
         if (sec < 60) return sec + "s";
         long min = sec / 60;
         if (min < 60) return min + "m";
