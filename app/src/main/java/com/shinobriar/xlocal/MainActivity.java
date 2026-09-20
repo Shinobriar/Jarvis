@@ -4308,6 +4308,67 @@ public class MainActivity extends Activity {
         }
     }
 
+    private void showGroupPhotoCropEditor(Bitmap bitmap, long groupId) {
+        Dialog d = new Dialog(this);
+        d.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        LinearLayout root = vbox();
+
+        LinearLayout top = hbox();
+        top.setPadding(dp(8), dp(6), dp(8), dp(6));
+        XUi.IconView close = new XUi.IconView(this, XUi.IconView.CLOSE, pal.fg);
+        close.setLayoutParams(new LinearLayout.LayoutParams(dp(42), dp(42)));
+        close.setPadding(dp(10), dp(10), dp(10), dp(10));
+        top.addView(close);
+
+        TextView title = tv("Adjust group photo", 18, pal.fg, true);
+        title.setLayoutParams(new LinearLayout.LayoutParams(0, dp(42), 1f));
+        top.addView(title);
+
+        TextView rotate = tv("Rotate", 14, XUi.BLUE, true);
+        rotate.setGravity(Gravity.CENTER);
+        rotate.setPadding(dp(10), 0, dp(10), 0);
+        top.addView(rotate);
+
+        TextView save = pill("Save", true);
+        save.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(36)));
+        top.addView(save);
+        root.addView(top);
+
+        CropImageView crop = new CropImageView(this);
+        crop.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        root.addView(crop);
+
+        TextView hint = tv("Drag to move · pinch to resize · double-tap to reset", 13, pal.secondary, false);
+        hint.setGravity(Gravity.CENTER);
+        hint.setPadding(dp(10), dp(12), dp(10), dp(14));
+        root.addView(hint);
+
+        crop.post(() -> crop.setBitmap(bitmap, 1f));
+        close.setOnClickListener(v -> { d.dismiss(); renderGroupChat(groupId); });
+        rotate.setOnClickListener(v -> crop.rotate90());
+        save.setOnClickListener(v -> {
+            try {
+                Bitmap out = crop.renderCrop(1024, 1024);
+                if (out == null) throw new Exception("Couldn't crop image");
+                String path = saveBitmapToInternal(out);
+                out.recycle();
+                db.setGroupAvatar(groupId, path);
+                d.dismiss();
+                renderGroupChat(groupId);
+            } catch (Exception e) {
+                Toast.makeText(this, "Couldn't save group photo: " + e.getMessage(), Toast.LENGTH_LONG).show();
+            }
+        });
+
+        d.setContentView(root);
+        d.show();
+        Window w = d.getWindow();
+        if (w != null) {
+            w.setBackgroundDrawable(new ColorDrawable(pal.bg));
+            w.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT);
+        }
+    }
+
     private String saveBitmapToInternal(Bitmap bitmap) throws Exception {
         File dir = new File(getFilesDir(), "media");
         if (!dir.exists()) dir.mkdirs();
@@ -4347,6 +4408,25 @@ public class MainActivity extends Activity {
         startActivityForResult(i, PICK_GIF_MEDIA);
     }
 
+    private void pickGroupPhoto(long groupId) {
+        pendingGroupPhotoId = groupId;
+        Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        i.addCategory(Intent.CATEGORY_OPENABLE);
+        i.setType("image/*");
+        startActivityForResult(i, PICK_GROUP_PHOTO);
+    }
+
+    private void takeGroupPhoto(long groupId) {
+        pendingGroupPhotoId = groupId;
+        Intent i = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+        if (i.resolveActivity(getPackageManager()) == null) {
+            pendingGroupPhotoId = -1;
+            Toast.makeText(this, "No camera app is available", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        startActivityForResult(i, CAPTURE_GROUP_PHOTO);
+    }
+
     private void exportUniversePicker() {
         Intent i = new Intent(Intent.ACTION_CREATE_DOCUMENT);
         i.addCategory(Intent.CATEGORY_OPENABLE);
@@ -4374,6 +4454,16 @@ public class MainActivity extends Activity {
         }
 
         try {
+            if (requestCode == CAPTURE_GROUP_PHOTO) {
+                Bitmap bitmap = data == null || data.getExtras() == null ? null
+                        : (Bitmap) data.getExtras().get("data");
+                long groupId = pendingGroupPhotoId;
+                pendingGroupPhotoId = -1;
+                if (bitmap == null || groupId <= 0) throw new Exception("Camera did not return an image");
+                showGroupPhotoCropEditor(bitmap, groupId);
+                return;
+            }
+
             if (requestCode == CAPTURE_POST_MEDIA) {
                 Bitmap bitmap = data == null || data.getExtras() == null ? null
                         : (Bitmap) data.getExtras().get("data");
@@ -4390,7 +4480,8 @@ public class MainActivity extends Activity {
             }
 
             Uri uri = data.getData();
-            if (requestCode == PICK_AVATAR || requestCode == PICK_BANNER || requestCode == PICK_POST_MEDIA || requestCode == PICK_GIF_MEDIA) {
+            if (requestCode == PICK_AVATAR || requestCode == PICK_BANNER || requestCode == PICK_POST_MEDIA ||
+                    requestCode == PICK_GIF_MEDIA || requestCode == PICK_GROUP_PHOTO) {
                 if (requestCode == PICK_POST_MEDIA) {
                     String mime = getContentResolver().getType(uri);
                     if (mime != null && mime.toLowerCase(Locale.US).startsWith("video/")) {
@@ -4410,6 +4501,15 @@ public class MainActivity extends Activity {
                 } else if (requestCode == PICK_GIF_MEDIA) {
                     composeMediaPath = copyUriToInternal(uri, ".gif");
                     showComposer(composeReplyTo, composeQuoteOf);
+                } else if (requestCode == PICK_GROUP_PHOTO) {
+                    long groupId = pendingGroupPhotoId;
+                    pendingGroupPhotoId = -1;
+                    Bitmap bitmap;
+                    try (InputStream in = getContentResolver().openInputStream(uri)) {
+                        bitmap = in == null ? null : BitmapFactory.decodeStream(in);
+                    }
+                    if (bitmap == null || groupId <= 0) throw new Exception("Couldn't decode group photo");
+                    showGroupPhotoCropEditor(bitmap, groupId);
                 } else if (pendingImageAccountId > 0) {
                     long id = pendingImageAccountId;
                     pendingImageAccountId = -1;
