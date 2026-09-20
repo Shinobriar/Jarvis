@@ -5360,14 +5360,25 @@ public class MainActivity extends Activity {
     }
 
     private String timeAgo(long when) {
-        long sec = Math.max(0, (System.currentTimeMillis() - when) / 1000);
+        long now = System.currentTimeMillis();
+        if (when > now) return exactPostDate(when);
+
+        long sec = Math.max(0, (now - when) / 1000L);
         if (sec < 60) return sec + "s";
-        long min = sec / 60;
+
+        long min = sec / 60L;
         if (min < 60) return min + "m";
-        long h = min / 60;
-        if (h < 24) return h + "h";
-        long d = h / 24;
-        if (d < 7) return d + "d";
-        return new SimpleDateFormat("MMM d", Locale.US).format(new Date(when));
+
+        long hours = min / 60L;
+        if (hours < 24) return hours + "h";
+
+        long days = hours / 24L;
+        if (days <= 7) return days + "d";
+
+        return exactPostDate(when);
+    }
+
+    private String exactPostDate(long when) {
+        return new SimpleDateFormat("MMM d, yyyy · HH:mm", Locale.US).format(new Date(when));
     }
 }
