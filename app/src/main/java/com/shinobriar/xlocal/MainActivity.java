@@ -961,7 +961,7 @@ public class MainActivity extends Activity {
             View media = postMediaPreview(p, dp(260), 14);
             LinearLayout.LayoutParams ip = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
-                    isVideoPath(p.mediaPath) ? ViewGroup.LayoutParams.WRAP_CONTENT : dp(260));
+                    ViewGroup.LayoutParams.WRAP_CONTENT);
             ip.setMargins(0, dp(4), dp(4), dp(7));
             media.setLayoutParams(ip);
             content.addView(media);
@@ -1063,7 +1063,7 @@ public class MainActivity extends Activity {
             View media = postMediaPreview(p, dp(340), 16);
             LinearLayout.LayoutParams ip = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
-                    isVideoPath(p.mediaPath) ? ViewGroup.LayoutParams.WRAP_CONTENT : dp(340));
+                    ViewGroup.LayoutParams.WRAP_CONTENT);
             ip.setMargins(0, 0, 0, dp(12));
             media.setLayoutParams(ip);
             card.addView(media);
@@ -4546,23 +4546,16 @@ public class MainActivity extends Activity {
 
     private View postMediaPreview(Post p, int heightPx, int radiusDp) {
         final boolean video = isVideoPath(p.mediaPath);
-        FrameLayout frame;
-        if (video) {
-            AspectFrameLayout aspectFrame = new AspectFrameLayout(this);
-            aspectFrame.setAspectRatio(videoAspectRatio(p.mediaPath));
-            frame = aspectFrame;
-        } else {
-            frame = new FrameLayout(this);
-        }
-
+        AspectFrameLayout frame = new AspectFrameLayout(this);
+        frame.setAspectRatio(mediaAspectRatio(p.mediaPath));
         frame.setBackground(XUi.rounded(pal.surface, radiusDp, this));
         frame.setClipToOutline(true);
         frame.setOutlineProvider(ViewOutlineProvider.BACKGROUND);
 
         ImageView placeholder = new ImageView(this);
-        placeholder.setScaleType(video ? ImageView.ScaleType.FIT_CENTER : ImageView.ScaleType.CENTER_CROP);
-        setMediaPreviewImage(placeholder, p.mediaPath, 1400, 1400);
-        placeholder.setBackgroundColor(Color.BLACK);
+        placeholder.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        setMediaPreviewImage(placeholder, p.mediaPath, 1800, 1800);
+        placeholder.setBackgroundColor(pal.bg);
         placeholder.setLayoutParams(new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         frame.addView(placeholder);
@@ -4591,25 +4584,18 @@ public class MainActivity extends Activity {
         return frame;
     }
 
-    private float videoAspectRatio(String path) {
+    private float mediaAspectRatio(String path) {
         if (path == null) return 1f;
-        MediaMetadataRetriever retriever = new MediaMetadataRetriever();
+        if (isVideoPath(path)) return videoAspectRatio(path);
+
         try {
-            retriever.setDataSource(path);
-            int width = Integer.parseInt(retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH));
-            int height = Integer.parseInt(retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT));
-            String rotationValue = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION);
-            int rotation = rotationValue == null ? 0 : Integer.parseInt(rotationValue);
-            if (rotation == 90 || rotation == 270) {
-                int swap = width;
-                width = height;
-                height = swap;
+            BitmapFactory.Options options = new BitmapFactory.Options();
+            options.inJustDecodeBounds = true;
+            BitmapFactory.decodeFile(path, options);
+            if (options.outWidth > 0 && options.outHeight > 0) {
+                return options.outWidth / (float) options.outHeight;
             }
-            if (width > 0 && height > 0) return width / (float) height;
-        } catch (Exception ignored) {
-        } finally {
-            try { retriever.release(); } catch (Exception ignored) {}
-        }
+        } catch (Exception ignored) {}
         return 1f;
     }
 
