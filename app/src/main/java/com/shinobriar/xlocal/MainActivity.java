@@ -16,6 +16,7 @@ import android.content.SharedPreferences;
 import android.database.sqlite.SQLiteConstraintException;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Rect;
 import android.graphics.SurfaceTexture;
@@ -139,6 +140,7 @@ public class MainActivity extends Activity {
     private float gestureDownX;
     private float gestureDownY;
     private boolean gestureTracking;
+    private boolean mainTabAnimating;
     private boolean currentFollowListFollowing = true;
     private String currentSearchQuery = "";
 
@@ -554,11 +556,11 @@ public class MainActivity extends Activity {
                     int tab = currentMainTabIndex();
                     if (tab >= 0 && prefs.getBoolean("swipe_tabs", true)) {
                         if (dx < 0 && tab < 4) {
-                            openMainTab(tab + 1);
+                            openMainTabAnimated(tab + 1, 1);
                             return true;
                         }
                         if (dx > 0 && tab > 0) {
-                            openMainTab(tab - 1);
+                            openMainTabAnimated(tab - 1, -1);
                             return true;
                         }
                     }
@@ -583,6 +585,64 @@ public class MainActivity extends Activity {
         else if (index == 2) renderNotifications();
         else if (index == 3) renderMessages();
         else if (index == 4) renderProfile(currentAccountId);
+    }
+
+    private void openMainTabAnimated(int index, int direction) {
+        if (mainTabAnimating) return;
+        FrameLayout content = findViewById(android.R.id.content);
+        if (content == null || content.getChildCount() == 0) {
+            openMainTab(index);
+            return;
+        }
+
+        View outgoing = content.getChildAt(0);
+        int width = Math.max(1, outgoing.getWidth());
+        int height = Math.max(1, outgoing.getHeight());
+        Bitmap snapshot;
+        try {
+            snapshot = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+            Canvas canvas = new Canvas(snapshot);
+            outgoing.draw(canvas);
+        } catch (Throwable error) {
+            openMainTab(index);
+            return;
+        }
+
+        mainTabAnimating = true;
+        openMainTab(index);
+
+        FrameLayout newContent = findViewById(android.R.id.content);
+        if (newContent == null || newContent.getChildCount() == 0) {
+            mainTabAnimating = false;
+            snapshot.recycle();
+            return;
+        }
+
+        View incoming = newContent.getChildAt(0);
+        ImageView ghost = new ImageView(this);
+        ghost.setScaleType(ImageView.ScaleType.FIT_XY);
+        ghost.setImageBitmap(snapshot);
+        ghost.setLayoutParams(new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        newContent.addView(ghost);
+
+        float offscreen = direction >= 0 ? width : -width;
+        float outgoingTarget = direction >= 0 ? -width : width;
+        incoming.setTranslationX(offscreen);
+        incoming.animate()
+                .translationX(0f)
+                .setDuration(230)
+                .start();
+        ghost.animate()
+                .translationX(outgoingTarget)
+                .setDuration(230)
+                .withEndAction(() -> {
+                    try { newContent.removeView(ghost); } catch (Exception ignored) {}
+                    try { snapshot.recycle(); } catch (Exception ignored) {}
+                    incoming.setTranslationX(0f);
+                    mainTabAnimating = false;
+                })
+                .start();
     }
 
     private FrameLayout baseFrame() {
