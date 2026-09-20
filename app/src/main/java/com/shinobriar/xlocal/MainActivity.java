@@ -103,6 +103,7 @@ public class MainActivity extends Activity {
     private static final int SAVE_POST_MEDIA = 506;
     private static final int CAPTURE_POST_MEDIA = 507;
     private static final int PICK_GIF_MEDIA = 508;
+    private static final int PICK_GROUP_ICON = 509;
 
     private static final int SCREEN_HOME = 1;
     private static final int SCREEN_SEARCH = 2;
@@ -115,6 +116,7 @@ public class MainActivity extends Activity {
     private static final int SCREEN_DRAFTS = 9;
     private static final int SCREEN_FOLLOW_LIST = 10;
     private static final int SCREEN_MEDIA = 11;
+    private static final int SCREEN_GROUP_CHAT = 12;
 
     private LocalDb db;
     private SharedPreferences prefs;
@@ -131,6 +133,7 @@ public class MainActivity extends Activity {
     private int profileTab = 0;
     private long currentPostId = -1;
     private long currentChatId = -1;
+    private long currentGroupId = -1;
     private long currentMediaPostId = -1;
     private int currentThreadReplyLimit = 10;
     private int mediaRenderGeneration = 0;
@@ -149,6 +152,7 @@ public class MainActivity extends Activity {
     private boolean hasRenderedScreen = false;
 
     private long pendingImageAccountId = -1;
+    private long pendingGroupIconId = -1;
     private String pendingSaveMediaPath;
     private String composeDraft = "";
     private String composeMediaPath;
@@ -169,6 +173,7 @@ public class MainActivity extends Activity {
         int profileTab;
         long postId;
         long chatId;
+        long groupId;
         long mediaPostId;
         int threadReplyLimit;
         boolean followFollowing;
@@ -179,6 +184,7 @@ public class MainActivity extends Activity {
             this.profileId = -1;
             this.postId = -1;
             this.chatId = -1;
+            this.groupId = -1;
             this.mediaPostId = -1;
             this.threadReplyLimit = 10;
             this.searchQuery = "";
