@@ -1690,26 +1690,40 @@ public class MainActivity extends Activity {
     }
 
     private View mediaAuthorRow(Account a, boolean overlay) {
-        LinearLayout row = hbox();
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setPadding(dp(18), dp(9), dp(18), dp(9));
-        row.setBackgroundColor(overlay ? Color.TRANSPARENT : Color.BLACK);
+        row.setBackground(null);
 
         XUi.AvatarView avatar = new XUi.AvatarView(this, a);
+        avatar.setBackground(null);
         LinearLayout.LayoutParams ap = new LinearLayout.LayoutParams(dp(46), dp(46));
         ap.setMargins(0, 0, dp(10), 0);
         avatar.setLayoutParams(ap);
         avatar.setOnClickListener(v -> renderProfile(a.id));
         row.addView(avatar);
 
-        LinearLayout identity = vbox();
+        LinearLayout identity = new LinearLayout(this);
+        identity.setOrientation(LinearLayout.VERTICAL);
+        identity.setGravity(Gravity.CENTER_VERTICAL);
+        identity.setBackground(null);
         identity.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        LinearLayout nameRow = hbox();
+
+        LinearLayout nameRow = new LinearLayout(this);
+        nameRow.setOrientation(LinearLayout.HORIZONTAL);
+        nameRow.setGravity(Gravity.CENTER_VERTICAL);
+        nameRow.setBackground(null);
+
         TextView name = tv(a.name, 16, Color.WHITE, true);
+        name.setBackground(null);
         nameRow.addView(name);
         if (a.verified) nameRow.addView(verifiedBadge(17));
         identity.addView(nameRow);
-        identity.addView(tv("@" + a.handle, 14, 0xffb5b8bd, false));
+
+        TextView handle = tv("@" + a.handle, 14, 0xffb5b8bd, false);
+        handle.setBackground(null);
+        identity.addView(handle);
         identity.setOnClickListener(v -> renderProfile(a.id));
         row.addView(identity);
 
