@@ -2636,9 +2636,13 @@ public class MainActivity extends Activity {
         if (group == null) return;
 
         LinearLayout content = dialogForm();
+        final AlertDialog[] holder = new AlertDialog[1];
 
         TextView photo = pill(group.avatarPath == null ? "Add group photo" : "Change / adjust group photo", false);
-        photo.setOnClickListener(v -> chooseGroupAvatar(groupId));
+        photo.setOnClickListener(v -> {
+            if (holder[0] != null) holder[0].dismiss();
+            chooseGroupAvatar(groupId);
+        });
         content.addView(photo);
 
         EditText name = field("Group name", false);
@@ -2651,15 +2655,21 @@ public class MainActivity extends Activity {
         for (Account member : db.groupMembers(groupId)) {
             TextView memberView = tv(member.name + "  @" + member.handle, 15, pal.fg, false);
             memberView.setPadding(dp(4), dp(7), dp(4), dp(7));
-            memberView.setOnClickListener(v -> renderProfile(member.id));
+            memberView.setOnClickListener(v -> {
+                if (holder[0] != null) holder[0].dismiss();
+                renderProfile(member.id);
+            });
             content.addView(memberView);
         }
 
         TextView addPeople = pill("Add people", false);
-        addPeople.setOnClickListener(v -> showAddGroupMembers(groupId));
+        addPeople.setOnClickListener(v -> {
+            if (holder[0] != null) holder[0].dismiss();
+            showAddGroupMembers(groupId);
+        });
         content.addView(addPeople);
 
-        new AlertDialog.Builder(this)
+        holder[0] = new AlertDialog.Builder(this)
                 .setTitle("Group info")
                 .setView(content)
                 .setNegativeButton("Leave group", (dialog, which) -> {
@@ -2672,7 +2682,8 @@ public class MainActivity extends Activity {
                     db.updateGroup(groupId, name.getText().toString(), latest == null ? group.avatarPath : latest.avatarPath);
                     renderGroupChat(groupId);
                 })
-                .show();
+                .create();
+        holder[0].show();
     }
 
     private void showAddGroupMembers(long groupId) {
