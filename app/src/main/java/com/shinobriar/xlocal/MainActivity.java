@@ -4510,6 +4510,120 @@ public class MainActivity extends Activity {
         }
     }
 
+    private void chooseGroupAvatar(long groupId) {
+        GroupChat group = db.getGroup(groupId);
+        if (group == null) return;
+        pendingGroupAvatarId = groupId;
+
+        if (group.avatarPath != null && new File(group.avatarPath).exists()) {
+            String[] options = {"Choose a new photo", "Adjust current photo", "Remove group photo"};
+            new AlertDialog.Builder(this)
+                    .setTitle("Group photo")
+                    .setItems(options, (dialog, which) -> {
+                        if (which == 0) {
+                            pickImage(PICK_GROUP_AVATAR);
+                        } else if (which == 1) {
+                            showGroupCropEditorFromPath(group.avatarPath, groupId);
+                        } else {
+                            db.setGroupAvatar(groupId, null);
+                            pendingGroupAvatarId = -1;
+                            renderGroupChat(groupId);
+                        }
+                    })
+                    .setNegativeButton("Cancel", null)
+                    .show();
+        } else {
+            pickImage(PICK_GROUP_AVATAR);
+        }
+    }
+
+    private void showGroupCropEditorFromUri(Uri uri, long groupId) throws Exception {
+        Bitmap bitmap;
+        try (InputStream in = getContentResolver().openInputStream(uri)) {
+            if (in == null) throw new Exception("Cannot open image");
+            bitmap = BitmapFactory.decodeStream(in);
+        }
+        if (bitmap == null) throw new Exception("Couldn't decode image");
+        showGroupCropEditor(bitmap, groupId);
+    }
+
+    private void showGroupCropEditorFromPath(String path, long groupId) {
+        Bitmap bitmap = BitmapFactory.decodeFile(path);
+        if (bitmap == null) {
+            Toast.makeText(this, "Couldn't open the current group photo", Toast.LENGTH_SHORT).show();
+            renderGroupChat(groupId);
+            return;
+        }
+        showGroupCropEditor(bitmap, groupId);
+    }
+
+    private void showGroupCropEditor(Bitmap bitmap, long groupId) {
+        Dialog d = new Dialog(this);
+        d.requestWindowFeature(Window.FEATURE_NO_TITLE);
+
+        LinearLayout root = vbox();
+        LinearLayout top = hbox();
+        top.setPadding(dp(8), dp(6), dp(8), dp(6));
+
+        XUi.IconView close = new XUi.IconView(this, XUi.IconView.CLOSE, pal.fg);
+        close.setLayoutParams(new LinearLayout.LayoutParams(dp(42), dp(42)));
+        close.setPadding(dp(10), dp(10), dp(10), dp(10));
+        top.addView(close);
+
+        TextView title = tv("Adjust group photo", 18, pal.fg, true);
+        title.setLayoutParams(new LinearLayout.LayoutParams(0, dp(42), 1f));
+        top.addView(title);
+
+        TextView rotate = tv("Rotate", 14, XUi.BLUE, true);
+        rotate.setGravity(Gravity.CENTER);
+        rotate.setPadding(dp(10), 0, dp(10), 0);
+        top.addView(rotate);
+
+        TextView save = pill("Save", true);
+        save.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(36)));
+        top.addView(save);
+        root.addView(top);
+
+        CropImageView crop = new CropImageView(this);
+        crop.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        root.addView(crop);
+
+        TextView hint = tv("Drag to move · pinch to resize · double-tap to reset", 13, pal.secondary, false);
+        hint.setGravity(Gravity.CENTER);
+        hint.setPadding(dp(10), dp(12), dp(10), dp(14));
+        root.addView(hint);
+
+        crop.post(() -> crop.setBitmap(bitmap, 1f));
+        close.setOnClickListener(v -> {
+            pendingGroupAvatarId = -1;
+            d.dismiss();
+            renderGroupChat(groupId);
+        });
+        rotate.setOnClickListener(v -> crop.rotate90());
+        save.setOnClickListener(v -> {
+            try {
+                Bitmap out = crop.renderCrop(1024, 1024);
+                if (out == null) throw new Exception("Couldn't crop image");
+                String path = saveBitmapToInternal(out);
+                out.recycle();
+                db.setGroupAvatar(groupId, path);
+                pendingGroupAvatarId = -1;
+                d.dismiss();
+                renderGroupChat(groupId);
+            } catch (Exception e) {
+                Toast.makeText(this, "Couldn't save group photo: " + e.getMessage(), Toast.LENGTH_LONG).show();
+            }
+        });
+
+        d.setContentView(root);
+        d.show();
+        Window w = d.getWindow();
+        if (w != null) {
+            w.setBackgroundDrawable(new ColorDrawable(pal.bg));
+            w.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT);
+        }
+    }
+
     private void chooseAccountImage(long accountId, boolean avatar, String currentPath) {
         pendingImageAccountId = accountId;
         int request = avatar ? PICK_AVATAR : PICK_BANNER;
@@ -4668,6 +4782,10 @@ public class MainActivity extends Activity {
         if (resultCode != RESULT_OK) {
             if (requestCode == PICK_POST_MEDIA || requestCode == PICK_GIF_MEDIA || requestCode == CAPTURE_POST_MEDIA) {
                 showComposer(composeReplyTo, composeQuoteOf);
+            } else if (requestCode == PICK_GROUP_AVATAR && pendingGroupAvatarId > 0) {
+                long groupId = pendingGroupAvatarId;
+                pendingGroupAvatarId = -1;
+                renderGroupChat(groupId);
             }
             return;
         }
@@ -4689,7 +4807,8 @@ public class MainActivity extends Activity {
             }
 
             Uri uri = data.getData();
-            if (requestCode == PICK_AVATAR || requestCode == PICK_BANNER || requestCode == PICK_POST_MEDIA || requestCode == PICK_GIF_MEDIA) {
+            if (requestCode == PICK_AVATAR || requestCode == PICK_BANNER || requestCode == PICK_POST_MEDIA ||
+                    requestCode == PICK_GIF_MEDIA || requestCode == PICK_GROUP_AVATAR) {
                 if (requestCode == PICK_POST_MEDIA) {
                     String mime = getContentResolver().getType(uri);
                     if (mime != null && mime.toLowerCase(Locale.US).startsWith("video/")) {
@@ -4709,6 +4828,9 @@ public class MainActivity extends Activity {
                 } else if (requestCode == PICK_GIF_MEDIA) {
                     composeMediaPath = copyUriToInternal(uri, ".gif");
                     showComposer(composeReplyTo, composeQuoteOf);
+                } else if (requestCode == PICK_GROUP_AVATAR && pendingGroupAvatarId > 0) {
+                    long groupId = pendingGroupAvatarId;
+                    showGroupCropEditorFromUri(uri, groupId);
                 } else if (pendingImageAccountId > 0) {
                     long id = pendingImageAccountId;
                     pendingImageAccountId = -1;
