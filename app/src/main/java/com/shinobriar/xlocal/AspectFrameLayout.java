@@ -12,7 +12,7 @@ final class AspectFrameLayout extends FrameLayout {
 
     void setAspectRatio(float ratio) {
         if (Float.isNaN(ratio) || Float.isInfinite(ratio) || ratio <= 0f) ratio = 1f;
-        aspectRatio = Math.max(0.28f, Math.min(3.2f, ratio));
+        aspectRatio = Math.max(0.12f, Math.min(8.0f, ratio));
         requestLayout();
     }
 
