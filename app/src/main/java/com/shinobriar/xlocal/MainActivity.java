@@ -4276,8 +4276,8 @@ public class MainActivity extends Activity {
         EditText reposts = numberField("Reposts", p.reposts);
         EditText replies = numberField("Replies", p.replies);
         EditText bookmarks = numberField("Bookmarks", p.bookmarks);
-        EditText mins = numberField("Minutes ago", Math.max(0, (System.currentTimeMillis() - p.createdAt) / 60000L));
         EditText boost = numberField("Recommendation boost", (long)p.viralBoost);
+        TextView date = pill("Date: " + exactPostDate(p.createdAt), false);
         TextView author = pill("Author: @" + account(p.authorId).handle, false);
 
         form.addView(body);
@@ -4286,12 +4286,14 @@ public class MainActivity extends Activity {
         form.addView(reposts);
         form.addView(replies);
         form.addView(bookmarks);
-        form.addView(mins);
+        form.addView(date);
         form.addView(boost);
         form.addView(author);
 
         final long[] chosenAuthor = {p.authorId};
+        final long[] chosenDate = {p.createdAt};
         author.setOnClickListener(v -> chooseDirectorAuthor(chosenAuthor, author));
+        date.setOnClickListener(v -> showDirectorDatePicker(chosenDate, date));
 
         new AlertDialog.Builder(this)
                 .setTitle("Edit local post")
@@ -4305,8 +4307,7 @@ public class MainActivity extends Activity {
                     p.reposts = parseLong(reposts, p.reposts);
                     p.replies = parseLong(replies, p.replies);
                     p.bookmarks = parseLong(bookmarks, p.bookmarks);
-                    long minutes = Math.max(0, parseLong(mins, 0));
-                    p.createdAt = System.currentTimeMillis() - minutes * 60000L;
+                    p.createdAt = chosenDate[0];
                     p.viralBoost = parseLong(boost, (long)p.viralBoost);
                     db.updatePostDirector(p);
                     refreshCurrent();
@@ -4314,18 +4315,40 @@ public class MainActivity extends Activity {
                 .show();
     }
 
-    private EditText numberField(String hint, long value) {
-        EditText e = field(hint, false);
-        e.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_SIGNED);
-        e.setHint(hint);
-        e.setText(String.valueOf(value));
-        return e;
+    private void showDirectorDatePicker(long[] chosenDate, TextView dateButton) {
+        Calendar calendar = Calendar.getInstance();
+        calendar.setTimeInMillis(chosenDate[0] > 0 ? chosenDate[0] : System.currentTimeMillis());
+
+        DatePickerDialog picker = new DatePickerDialog(this,
+                (view, year, month, dayOfMonth) -> {
+                    Calendar picked = Calendar.getInstance();
+                    picked.setTimeInMillis(chosenDate[0] > 0 ? chosenDate[0] : System.currentTimeMillis());
+                    picked.set(Calendar.YEAR, year);
+                    picked.set(Calendar.MONTH, month);
+                    picked.set(Calendar.DAY_OF_MONTH, dayOfMonth);
+
+                    TimePickerDialog time = new TimePickerDialog(this,
+                            (timeView, hour, minute) -> {
+                                picked.set(Calendar.HOUR_OF_DAY, hour);
+                                picked.set(Calendar.MINUTE, minute);
+                                picked.set(Calendar.SECOND, 0);
+                                picked.set(Calendar.MILLISECOND, 0);
+                                chosenDate[0] = picked.getTimeInMillis();
+                                dateButton.setText("Date: " + exactPostDate(chosenDate[0]));
+                            },
+                            picked.get(Calendar.HOUR_OF_DAY),
+                            picked.get(Calendar.MINUTE),
+                            true);
+                    time.setTitle("Post time");
+                    time.show();
+                },
+                calendar.get(Calendar.YEAR),
+                calendar.get(Calendar.MONTH),
+                calendar.get(Calendar.DAY_OF_MONTH));
+        picker.setTitle("Post date");
+        picker.show();
     }
 
-    private long parseLong(EditText e, long fallback) {
-        try { return Long.parseLong(e.getText().toString().trim()); }
-        catch (Exception ex) { return fallback; }
-    }
 
     private void chooseDirectorAuthor(final long[] chosen, TextView button) {
         List<Account> accounts = db.listAccounts();
