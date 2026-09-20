@@ -103,6 +103,8 @@ public class MainActivity extends Activity {
     private static final int SAVE_POST_MEDIA = 506;
     private static final int CAPTURE_POST_MEDIA = 507;
     private static final int PICK_GIF_MEDIA = 508;
+    private static final int PICK_GROUP_PHOTO = 509;
+    private static final int CAPTURE_GROUP_PHOTO = 510;
 
     private static final int SCREEN_HOME = 1;
     private static final int SCREEN_SEARCH = 2;
@@ -115,6 +117,7 @@ public class MainActivity extends Activity {
     private static final int SCREEN_DRAFTS = 9;
     private static final int SCREEN_FOLLOW_LIST = 10;
     private static final int SCREEN_MEDIA = 11;
+    private static final int SCREEN_GROUP_CHAT = 12;
 
     private LocalDb db;
     private SharedPreferences prefs;
@@ -131,6 +134,7 @@ public class MainActivity extends Activity {
     private int profileTab = 0;
     private long currentPostId = -1;
     private long currentChatId = -1;
+    private long currentGroupId = -1;
     private long currentMediaPostId = -1;
     private int currentThreadReplyLimit = 10;
     private int mediaRenderGeneration = 0;
@@ -149,6 +153,7 @@ public class MainActivity extends Activity {
     private boolean hasRenderedScreen = false;
 
     private long pendingImageAccountId = -1;
+    private long pendingGroupPhotoId = -1;
     private String pendingSaveMediaPath;
     private String composeDraft = "";
     private String composeMediaPath;
@@ -169,6 +174,7 @@ public class MainActivity extends Activity {
         int profileTab;
         long postId;
         long chatId;
+        long groupId;
         long mediaPostId;
         int threadReplyLimit;
         boolean followFollowing;
@@ -179,6 +185,7 @@ public class MainActivity extends Activity {
             this.profileId = -1;
             this.postId = -1;
             this.chatId = -1;
+            this.groupId = -1;
             this.mediaPostId = -1;
             this.threadReplyLimit = 10;
             this.searchQuery = "";
@@ -436,6 +443,7 @@ public class MainActivity extends Activity {
         state.profileTab = profileTab;
         state.postId = currentPostId;
         state.chatId = currentChatId;
+        state.groupId = currentGroupId;
         state.mediaPostId = currentMediaPostId;
         state.threadReplyLimit = currentThreadReplyLimit;
         state.followFollowing = currentFollowListFollowing;
@@ -448,6 +456,7 @@ public class MainActivity extends Activity {
         if (targetScreen == SCREEN_PROFILE) return currentProfileId == targetId;
         if (targetScreen == SCREEN_POST) return currentPostId == targetId;
         if (targetScreen == SCREEN_CHAT) return currentChatId == targetId;
+        if (targetScreen == SCREEN_GROUP_CHAT) return currentGroupId == targetId;
         if (targetScreen == SCREEN_MEDIA) return currentMediaPostId == targetId;
         if (targetScreen == SCREEN_FOLLOW_LIST) {
             return currentProfileId == targetId && currentFollowListFollowing == targetFlag;
@@ -498,6 +507,8 @@ public class MainActivity extends Activity {
                     renderBookmarks();
                 } else if (state.screen == SCREEN_CHAT && state.chatId > 0 && db.getAccount(state.chatId) != null) {
                     renderChat(state.chatId);
+                } else if (state.screen == SCREEN_GROUP_CHAT && state.groupId > 0 && db.getGroup(state.groupId) != null) {
+                    renderGroupChat(state.groupId);
                 } else if (state.screen == SCREEN_DRAFTS) {
                     renderDrafts();
                 } else if (state.screen == SCREEN_FOLLOW_LIST && state.profileId > 0) {
@@ -4790,6 +4801,7 @@ public class MainActivity extends Activity {
         else if (currentScreen == SCREEN_POST && currentPostId > 0) renderPost(currentPostId);
         else if (currentScreen == SCREEN_BOOKMARKS) renderBookmarks();
         else if (currentScreen == SCREEN_CHAT && currentChatId > 0) renderChat(currentChatId);
+        else if (currentScreen == SCREEN_GROUP_CHAT && currentGroupId > 0) renderGroupChat(currentGroupId);
         else if (currentScreen == SCREEN_DRAFTS) renderDrafts();
         else if (currentScreen == SCREEN_FOLLOW_LIST && currentProfileId > 0) renderFollowList(currentProfileId, currentFollowListFollowing);
         else if (currentScreen == SCREEN_MEDIA && currentMediaPostId > 0) renderMedia(currentMediaPostId);
