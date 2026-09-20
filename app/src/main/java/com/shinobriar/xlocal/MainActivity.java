@@ -2668,7 +2668,8 @@ public class MainActivity extends Activity {
                 })
                 .setNeutralButton("Close", null)
                 .setPositiveButton("Save", (dialog, which) -> {
-                    db.updateGroup(groupId, name.getText().toString(), group.avatarPath);
+                    GroupChat latest = db.getGroup(groupId);
+                    db.updateGroup(groupId, name.getText().toString(), latest == null ? group.avatarPath : latest.avatarPath);
                     renderGroupChat(groupId);
                 })
                 .show();
