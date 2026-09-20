@@ -9,11 +9,12 @@ import android.database.sqlite.SQLiteOpenHelper;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.LinkedHashSet;
 import java.util.Locale;
 
 final class LocalDb extends SQLiteOpenHelper {
     static final String DB_NAME = "xlocal.db";
-    static final int DB_VERSION = 3;
+    static final int DB_VERSION = 4;
 
     LocalDb(Context context) {
         super(context, DB_NAME, null, DB_VERSION);
@@ -85,8 +86,22 @@ final class LocalDb extends SQLiteOpenHelper {
                 "id INTEGER PRIMARY KEY AUTOINCREMENT," +
                 "sender_id INTEGER NOT NULL," +
                 "receiver_id INTEGER NOT NULL," +
+                "group_id INTEGER," +
                 "body TEXT NOT NULL," +
                 "created_at INTEGER NOT NULL)");
+
+        db.execSQL("CREATE TABLE dm_groups (" +
+                "id INTEGER PRIMARY KEY AUTOINCREMENT," +
+                "name TEXT NOT NULL DEFAULT ''," +
+                "avatar_path TEXT," +
+                "creator_id INTEGER NOT NULL," +
+                "created_at INTEGER NOT NULL)");
+
+        db.execSQL("CREATE TABLE dm_group_members (" +
+                "group_id INTEGER NOT NULL," +
+                "account_id INTEGER NOT NULL," +
+                "joined_at INTEGER NOT NULL," +
+                "PRIMARY KEY(group_id, account_id))");
 
         db.execSQL("CREATE TABLE drafts (" +
                 "id INTEGER PRIMARY KEY AUTOINCREMENT," +
@@ -180,6 +195,20 @@ final class LocalDb extends SQLiteOpenHelper {
             db.execSQL("ALTER TABLE drafts ADD COLUMN location TEXT NOT NULL DEFAULT ''");
             db.execSQL("ALTER TABLE drafts ADD COLUMN poll_options TEXT NOT NULL DEFAULT ''");
             db.execSQL("ALTER TABLE drafts ADD COLUMN scheduled_at INTEGER NOT NULL DEFAULT 0");
+        }
+        if (oldVersion < 4) {
+            db.execSQL("ALTER TABLE messages ADD COLUMN group_id INTEGER");
+            db.execSQL("CREATE TABLE IF NOT EXISTS dm_groups (" +
+                    "id INTEGER PRIMARY KEY AUTOINCREMENT," +
+                    "name TEXT NOT NULL DEFAULT ''," +
+                    "avatar_path TEXT," +
+                    "creator_id INTEGER NOT NULL," +
+                    "created_at INTEGER NOT NULL)");
+            db.execSQL("CREATE TABLE IF NOT EXISTS dm_group_members (" +
+                    "group_id INTEGER NOT NULL," +
+                    "account_id INTEGER NOT NULL," +
+                    "joined_at INTEGER NOT NULL," +
+                    "PRIMARY KEY(group_id, account_id))");
         }
     }
 
@@ -961,6 +990,7 @@ final class LocalDb extends SQLiteOpenHelper {
         ContentValues v = new ContentValues();
         v.put("sender_id", senderId);
         v.put("receiver_id", receiverId);
+        v.putNull("group_id");
         v.put("body", body);
         v.put("created_at", System.currentTimeMillis());
         getWritableDatabase().insert("messages", null, v);
@@ -969,7 +999,7 @@ final class LocalDb extends SQLiteOpenHelper {
     List<DirectMessage> conversation(long a, long b) {
         ArrayList<DirectMessage> out = new ArrayList<>();
         Cursor c = getReadableDatabase().rawQuery(
-                "SELECT * FROM messages WHERE (sender_id=? AND receiver_id=?) OR (sender_id=? AND receiver_id=?) ORDER BY created_at ASC LIMIT 300",
+                "SELECT * FROM messages WHERE group_id IS NULL AND ((sender_id=? AND receiver_id=?) OR (sender_id=? AND receiver_id=?)) ORDER BY created_at ASC LIMIT 300",
                 new String[]{String.valueOf(a), String.valueOf(b), String.valueOf(b), String.valueOf(a)});
         try {
             while (c.moveToNext()) {
@@ -977,6 +1007,8 @@ final class LocalDb extends SQLiteOpenHelper {
                 m.id = c.getLong(c.getColumnIndexOrThrow("id"));
                 m.senderId = c.getLong(c.getColumnIndexOrThrow("sender_id"));
                 m.receiverId = c.getLong(c.getColumnIndexOrThrow("receiver_id"));
+                int groupCol = c.getColumnIndex("group_id");
+                m.groupId = groupCol >= 0 && !c.isNull(groupCol) ? c.getLong(groupCol) : null;
                 m.body = c.getString(c.getColumnIndexOrThrow("body"));
                 m.createdAt = c.getLong(c.getColumnIndexOrThrow("created_at"));
                 out.add(m);
@@ -989,7 +1021,7 @@ final class LocalDb extends SQLiteOpenHelper {
 
     boolean hasMessages(long a, long b) {
         return DatabaseUtils.longForQuery(getReadableDatabase(),
-                "SELECT COUNT(*) FROM messages WHERE (sender_id=? AND receiver_id=?) OR (sender_id=? AND receiver_id=?)",
+                "SELECT COUNT(*) FROM messages WHERE group_id IS NULL AND ((sender_id=? AND receiver_id=?) OR (sender_id=? AND receiver_id=?))",
                 new String[]{String.valueOf(a), String.valueOf(b), String.valueOf(b), String.valueOf(a)}) > 0;
     }
 
@@ -1003,6 +1035,165 @@ final class LocalDb extends SQLiteOpenHelper {
     void deleteMessage(long messageId, long editorAccountId) {
         getWritableDatabase().delete("messages", "id=? AND sender_id=?",
                 new String[]{String.valueOf(messageId), String.valueOf(editorAccountId)});
+    }
+
+    long createGroup(String name, String avatarPath, long creatorId, List<Long> memberIds) {
+        SQLiteDatabase db = getWritableDatabase();
+        db.beginTransaction();
+        try {
+            ContentValues g = new ContentValues();
+            String cleanName = name == null ? "" : name.trim();
+            g.put("name", cleanName.isEmpty() ? "Group" : cleanName);
+            if (avatarPath == null || avatarPath.isEmpty()) g.putNull("avatar_path"); else g.put("avatar_path", avatarPath);
+            g.put("creator_id", creatorId);
+            g.put("created_at", System.currentTimeMillis());
+            long groupId = db.insertOrThrow("dm_groups", null, g);
+
+            LinkedHashSet<Long> unique = new LinkedHashSet<>();
+            unique.add(creatorId);
+            if (memberIds != null) unique.addAll(memberIds);
+            long now = System.currentTimeMillis();
+            for (Long accountId : unique) {
+                if (accountId == null || getAccount(accountId) == null) continue;
+                ContentValues m = new ContentValues();
+                m.put("group_id", groupId);
+                m.put("account_id", accountId);
+                m.put("joined_at", now);
+                db.insertWithOnConflict("dm_group_members", null, m, SQLiteDatabase.CONFLICT_IGNORE);
+            }
+            db.setTransactionSuccessful();
+            return groupId;
+        } finally {
+            db.endTransaction();
+        }
+    }
+
+    GroupChat getGroup(long groupId) {
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT g.*, (SELECT COUNT(*) FROM dm_group_members gm WHERE gm.group_id=g.id) AS member_count " +
+                        "FROM dm_groups g WHERE g.id=?",
+                new String[]{String.valueOf(groupId)});
+        try { return c.moveToFirst() ? group(c) : null; }
+        finally { c.close(); }
+    }
+
+    List<GroupChat> groupsFor(long accountId) {
+        ArrayList<GroupChat> out = new ArrayList<>();
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT g.*, (SELECT COUNT(*) FROM dm_group_members gm2 WHERE gm2.group_id=g.id) AS member_count, " +
+                        "(SELECT MAX(m.created_at) FROM messages m WHERE m.group_id=g.id) AS last_at " +
+                        "FROM dm_groups g JOIN dm_group_members gm ON gm.group_id=g.id " +
+                        "WHERE gm.account_id=? ORDER BY COALESCE(last_at,g.created_at) DESC, g.id DESC",
+                new String[]{String.valueOf(accountId)});
+        try { while (c.moveToNext()) out.add(group(c)); }
+        finally { c.close(); }
+        return out;
+    }
+
+    private GroupChat group(Cursor c) {
+        GroupChat g = new GroupChat();
+        g.id = c.getLong(c.getColumnIndexOrThrow("id"));
+        g.name = c.getString(c.getColumnIndexOrThrow("name"));
+        g.avatarPath = c.getString(c.getColumnIndexOrThrow("avatar_path"));
+        g.creatorId = c.getLong(c.getColumnIndexOrThrow("creator_id"));
+        g.createdAt = c.getLong(c.getColumnIndexOrThrow("created_at"));
+        int mc = c.getColumnIndex("member_count");
+        g.memberCount = mc >= 0 ? c.getInt(mc) : 0;
+        return g;
+    }
+
+    List<Account> groupMembers(long groupId) {
+        ArrayList<Account> out = new ArrayList<>();
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT a.* FROM accounts a JOIN dm_group_members gm ON gm.account_id=a.id " +
+                        "WHERE gm.group_id=? ORDER BY gm.joined_at ASC, a.id ASC",
+                new String[]{String.valueOf(groupId)});
+        try { while (c.moveToNext()) out.add(account(c)); }
+        finally { c.close(); }
+        return out;
+    }
+
+    boolean isGroupMember(long groupId, long accountId) {
+        return DatabaseUtils.longForQuery(getReadableDatabase(),
+                "SELECT COUNT(*) FROM dm_group_members WHERE group_id=? AND account_id=?",
+                new String[]{String.valueOf(groupId), String.valueOf(accountId)}) > 0;
+    }
+
+    void addGroupMembers(long groupId, List<Long> memberIds) {
+        if (memberIds == null) return;
+        SQLiteDatabase db = getWritableDatabase();
+        long now = System.currentTimeMillis();
+        for (Long accountId : new LinkedHashSet<>(memberIds)) {
+            if (accountId == null || getAccount(accountId) == null) continue;
+            ContentValues m = new ContentValues();
+            m.put("group_id", groupId);
+            m.put("account_id", accountId);
+            m.put("joined_at", now);
+            db.insertWithOnConflict("dm_group_members", null, m, SQLiteDatabase.CONFLICT_IGNORE);
+        }
+    }
+
+    void updateGroup(long groupId, String name, String avatarPath) {
+        ContentValues v = new ContentValues();
+        v.put("name", name == null || name.trim().isEmpty() ? "Group" : name.trim());
+        if (avatarPath == null || avatarPath.isEmpty()) v.putNull("avatar_path"); else v.put("avatar_path", avatarPath);
+        getWritableDatabase().update("dm_groups", v, "id=?", new String[]{String.valueOf(groupId)});
+    }
+
+    void setGroupAvatar(long groupId, String avatarPath) {
+        ContentValues v = new ContentValues();
+        if (avatarPath == null || avatarPath.isEmpty()) v.putNull("avatar_path"); else v.put("avatar_path", avatarPath);
+        getWritableDatabase().update("dm_groups", v, "id=?", new String[]{String.valueOf(groupId)});
+    }
+
+    void leaveGroup(long groupId, long accountId) {
+        SQLiteDatabase db = getWritableDatabase();
+        db.delete("dm_group_members", "group_id=? AND account_id=?",
+                new String[]{String.valueOf(groupId), String.valueOf(accountId)});
+        long remaining = DatabaseUtils.longForQuery(db,
+                "SELECT COUNT(*) FROM dm_group_members WHERE group_id=?",
+                new String[]{String.valueOf(groupId)});
+        if (remaining <= 0) {
+            db.delete("messages", "group_id=?", new String[]{String.valueOf(groupId)});
+            db.delete("dm_groups", "id=?", new String[]{String.valueOf(groupId)});
+        }
+    }
+
+    void sendGroupMessage(long senderId, long groupId, String body) {
+        if (!isGroupMember(groupId, senderId)) return;
+        ContentValues v = new ContentValues();
+        v.put("sender_id", senderId);
+        v.put("receiver_id", 0);
+        v.put("group_id", groupId);
+        v.put("body", body == null ? "" : body);
+        v.put("created_at", System.currentTimeMillis());
+        getWritableDatabase().insert("messages", null, v);
+    }
+
+    List<DirectMessage> groupConversation(long groupId) {
+        ArrayList<DirectMessage> out = new ArrayList<>();
+        Cursor c = getReadableDatabase().query("messages", null, "group_id=?",
+                new String[]{String.valueOf(groupId)}, null, null, "created_at ASC", "500");
+        try {
+            while (c.moveToNext()) {
+                DirectMessage m = new DirectMessage();
+                m.id = c.getLong(c.getColumnIndexOrThrow("id"));
+                m.senderId = c.getLong(c.getColumnIndexOrThrow("sender_id"));
+                m.receiverId = c.getLong(c.getColumnIndexOrThrow("receiver_id"));
+                m.groupId = groupId;
+                m.body = c.getString(c.getColumnIndexOrThrow("body"));
+                m.createdAt = c.getLong(c.getColumnIndexOrThrow("created_at"));
+                out.add(m);
+            }
+        } finally { c.close(); }
+        return out;
+    }
+
+    String groupLastMessage(long groupId) {
+        Cursor c = getReadableDatabase().query("messages", new String[]{"body"}, "group_id=?",
+                new String[]{String.valueOf(groupId)}, null, null, "created_at DESC", "1");
+        try { return c.moveToFirst() ? c.getString(0) : ""; }
+        finally { c.close(); }
     }
 
     long saveDraft(long existingId, long authorId, String body, String mediaPath, Long replyTo, Long quoteOf) {
@@ -1120,6 +1311,8 @@ final class LocalDb extends SQLiteOpenHelper {
             db.execSQL("DELETE FROM poll_votes");
             db.execSQL("DELETE FROM drafts");
             db.execSQL("DELETE FROM messages");
+            db.execSQL("DELETE FROM dm_group_members");
+            db.execSQL("DELETE FROM dm_groups");
             db.execSQL("DELETE FROM notifications");
             db.execSQL("DELETE FROM interactions");
             db.execSQL("DELETE FROM posts");
