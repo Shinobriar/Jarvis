@@ -4860,6 +4860,14 @@ public class MainActivity extends Activity {
         if (resultCode != RESULT_OK) {
             if (requestCode == PICK_POST_MEDIA || requestCode == PICK_GIF_MEDIA || requestCode == CAPTURE_POST_MEDIA) {
                 showComposer(composeReplyTo, composeQuoteOf);
+            } else if (requestCode == PICK_GROUP_ICON && pendingGroupIconId > 0) {
+                long groupId = pendingGroupIconId;
+                pendingGroupIconId = -1;
+                renderGroupChat(groupId);
+            } else if (requestCode == PICK_GROUP_ICON && pendingGroupIconId > 0) {
+                long groupId = pendingGroupIconId;
+                pendingGroupIconId = -1;
+                renderGroupChat(groupId);
             }
             return;
         }
@@ -4876,12 +4884,17 @@ public class MainActivity extends Activity {
             if (data == null || data.getData() == null) {
                 if (requestCode == PICK_POST_MEDIA || requestCode == PICK_GIF_MEDIA) {
                     showComposer(composeReplyTo, composeQuoteOf);
+                } else if (requestCode == PICK_GROUP_ICON && pendingGroupIconId > 0) {
+                    long groupId = pendingGroupIconId;
+                    pendingGroupIconId = -1;
+                    renderGroupChat(groupId);
                 }
                 return;
             }
 
             Uri uri = data.getData();
-            if (requestCode == PICK_AVATAR || requestCode == PICK_BANNER || requestCode == PICK_POST_MEDIA || requestCode == PICK_GIF_MEDIA) {
+            if (requestCode == PICK_AVATAR || requestCode == PICK_BANNER || requestCode == PICK_POST_MEDIA
+                    || requestCode == PICK_GIF_MEDIA || requestCode == PICK_GROUP_ICON) {
                 if (requestCode == PICK_POST_MEDIA) {
                     String mime = getContentResolver().getType(uri);
                     if (mime != null && mime.toLowerCase(Locale.US).startsWith("video/")) {
@@ -4901,6 +4914,10 @@ public class MainActivity extends Activity {
                 } else if (requestCode == PICK_GIF_MEDIA) {
                     composeMediaPath = copyUriToInternal(uri, ".gif");
                     showComposer(composeReplyTo, composeQuoteOf);
+                } else if (requestCode == PICK_GROUP_ICON && pendingGroupIconId > 0) {
+                    long groupId = pendingGroupIconId;
+                    pendingGroupIconId = -1;
+                    showGroupCropEditorFromUri(uri, groupId);
                 } else if (pendingImageAccountId > 0) {
                     long id = pendingImageAccountId;
                     pendingImageAccountId = -1;
