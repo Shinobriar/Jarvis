@@ -4342,6 +4342,23 @@ public class MainActivity extends Activity {
     }
 
 
+    private EditText numberField(String hint, long value) {
+        EditText field = field(hint, false);
+        field.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_SIGNED);
+        field.setText(String.valueOf(value));
+        field.setSelection(field.getText().length());
+        return field;
+    }
+
+    private long parseLong(EditText field, long fallback) {
+        try {
+            String value = field.getText().toString().trim();
+            return value.isEmpty() ? fallback : Long.parseLong(value);
+        } catch (Exception ignored) {
+            return fallback;
+        }
+    }
+
     private void chooseDirectorAuthor(final long[] chosen, TextView button) {
         List<Account> accounts = db.listAccounts();
         String[] names = new String[accounts.size()];
