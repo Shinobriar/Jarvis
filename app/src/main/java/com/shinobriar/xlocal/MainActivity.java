@@ -1352,12 +1352,12 @@ public class MainActivity extends Activity {
         root.setLayoutParams(new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
-        VideoView video = new VideoView(this);
-        video.setBackgroundColor(Color.BLACK);
-        video.setLayoutParams(new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        root.addView(video);
-        activeVideoView = video;
+        AspectTextureView texture = new AspectTextureView(this);
+        texture.setOpaque(true);
+        FrameLayout.LayoutParams textureParams = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.CENTER);
+        texture.setLayoutParams(textureParams);
+        root.addView(texture);
 
         LinearLayout top = mediaTopControls(p);
         FrameLayout.LayoutParams topParams = new FrameLayout.LayoutParams(
@@ -1368,7 +1368,7 @@ public class MainActivity extends Activity {
 
         LinearLayout bottom = vbox();
         bottom.setPadding(dp(16), dp(8), dp(16), dp(18));
-        bottom.setBackground(new ColorDrawable(0x22000000));
+        bottom.setBackground(new ColorDrawable(0x33000000));
         FrameLayout.LayoutParams bottomParams = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM);
         bottom.setLayoutParams(bottomParams);
@@ -1392,8 +1392,7 @@ public class MainActivity extends Activity {
         playSlot.setLayoutParams(new LinearLayout.LayoutParams(dp(56), dp(48)));
         XUi.IconView play = new XUi.IconView(this, XUi.IconView.PLAY, Color.WHITE);
         XUi.IconView pause = new XUi.IconView(this, XUi.IconView.PAUSE, Color.WHITE);
-        FrameLayout.LayoutParams controlIcon = new FrameLayout.LayoutParams(dp(28), dp(28), Gravity.CENTER);
-        play.setLayoutParams(controlIcon);
+        play.setLayoutParams(new FrameLayout.LayoutParams(dp(28), dp(28), Gravity.CENTER));
         pause.setLayoutParams(new FrameLayout.LayoutParams(dp(28), dp(28), Gravity.CENTER));
         playSlot.addView(play);
         playSlot.addView(pause);
@@ -1438,37 +1437,81 @@ public class MainActivity extends Activity {
         final boolean[] isMuted = {false};
         final int[] speedIndex = {0};
         final float[] speeds = {1f, 1.5f, 2f, .5f};
+        final boolean[] started = {false};
 
-        video.setOnPreparedListener(mp -> {
+        Runnable createPlayer = () -> {
+            if (started[0] || !texture.isAvailable() || generation != mediaRenderGeneration) return;
+            started[0] = true;
+            MediaPlayer mp = new MediaPlayer();
             playerRef[0] = mp;
-            duration[0] = Math.max(1, mp.getDuration());
-            try { mp.setVolume(1f, 1f); } catch (Exception ignored) {}
+            activeVideoPlayer = mp;
             try {
-                if (Build.VERSION.SDK_INT >= 23) {
-                    mp.setPlaybackParams(new PlaybackParams().setSpeed(speeds[speedIndex[0]]));
-                }
-            } catch (Exception ignored) {}
-            video.start();
-            pause.setVisibility(View.VISIBLE);
-            play.setVisibility(View.GONE);
-        });
+                Surface surface = new Surface(texture.getSurfaceTexture());
+                mp.setSurface(surface);
+                surface.release();
+                mp.setDataSource(p.mediaPath);
+                mp.setOnVideoSizeChangedListener((player, width, height) -> texture.setVideoSize(width, height));
+                mp.setOnPreparedListener(player -> {
+                    if (generation != mediaRenderGeneration || currentScreen != SCREEN_MEDIA || currentMediaPostId != p.id) {
+                        try { player.release(); } catch (Exception ignored) {}
+                        return;
+                    }
+                    duration[0] = Math.max(1, player.getDuration());
+                    try { player.setVolume(1f, 1f); } catch (Exception ignored) {}
+                    try {
+                        if (Build.VERSION.SDK_INT >= 23) {
+                            player.setPlaybackParams(new PlaybackParams().setSpeed(speeds[speedIndex[0]]));
+                        }
+                    } catch (Exception ignored) {}
+                    player.start();
+                    pause.setVisibility(View.VISIBLE);
+                    play.setVisibility(View.GONE);
+                });
+                mp.setOnCompletionListener(player -> {
+                    pause.setVisibility(View.GONE);
+                    play.setVisibility(View.VISIBLE);
+                    seek.setProgress(1000);
+                });
+                mp.setOnErrorListener((player, what, extra) -> {
+                    Toast.makeText(this, "Couldn't play this video", Toast.LENGTH_SHORT).show();
+                    pause.setVisibility(View.GONE);
+                    play.setVisibility(View.VISIBLE);
+                    return true;
+                });
+                mp.prepareAsync();
+            } catch (Exception e) {
+                try { mp.release(); } catch (Exception ignored) {}
+                if (activeVideoPlayer == mp) activeVideoPlayer = null;
+                Toast.makeText(this, "Couldn't open video: " + e.getMessage(), Toast.LENGTH_LONG).show();
+            }
+        };
 
-        video.setOnCompletionListener(mp -> {
-            pause.setVisibility(View.GONE);
-            play.setVisibility(View.VISIBLE);
-            seek.setProgress(1000);
+        texture.setSurfaceTextureListener(new TextureView.SurfaceTextureListener() {
+            @Override public void onSurfaceTextureAvailable(SurfaceTexture surface, int width, int height) {
+                createPlayer.run();
+            }
+            @Override public void onSurfaceTextureSizeChanged(SurfaceTexture surface, int width, int height) {}
+            @Override public boolean onSurfaceTextureDestroyed(SurfaceTexture surface) {
+                if (generation == mediaRenderGeneration) stopActiveVideo();
+                return true;
+            }
+            @Override public void onSurfaceTextureUpdated(SurfaceTexture surface) {}
         });
 
         playSlot.setOnClickListener(v -> {
-            if (video.isPlaying()) {
-                video.pause();
-                pause.setVisibility(View.GONE);
-                play.setVisibility(View.VISIBLE);
-            } else {
-                video.start();
-                pause.setVisibility(View.VISIBLE);
-                play.setVisibility(View.GONE);
-            }
+            MediaPlayer mp = playerRef[0];
+            if (mp == null) return;
+            try {
+                if (mp.isPlaying()) {
+                    mp.pause();
+                    pause.setVisibility(View.GONE);
+                    play.setVisibility(View.VISIBLE);
+                } else {
+                    mp.start();
+                    pause.setVisibility(View.VISIBLE);
+                    play.setVisibility(View.GONE);
+                }
+            } catch (Exception ignored) {}
         });
 
         seek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
@@ -1481,8 +1524,10 @@ public class MainActivity extends Activity {
             @Override public void onStartTrackingTouch(SeekBar bar) { dragging[0] = true; }
             @Override public void onStopTrackingTouch(SeekBar bar) {
                 dragging[0] = false;
-                if (duration[0] > 0) {
-                    video.seekTo((int)(duration[0] * (bar.getProgress() / 1000f)));
+                MediaPlayer mp = playerRef[0];
+                if (mp != null && duration[0] > 0) {
+                    try { mp.seekTo((int)(duration[0] * (bar.getProgress() / 1000f))); }
+                    catch (Exception ignored) {}
                 }
             }
         });
@@ -1491,17 +1536,19 @@ public class MainActivity extends Activity {
             speedIndex[0] = (speedIndex[0] + 1) % speeds.length;
             float selected = speeds[speedIndex[0]];
             speed.setText(selected == 1f ? "1x" : (selected == .5f ? "0.5x" : (selected == 1.5f ? "1.5x" : "2x")));
+            MediaPlayer mp = playerRef[0];
             try {
-                if (Build.VERSION.SDK_INT >= 23 && playerRef[0] != null) {
-                    playerRef[0].setPlaybackParams(new PlaybackParams().setSpeed(selected));
+                if (Build.VERSION.SDK_INT >= 23 && mp != null) {
+                    mp.setPlaybackParams(new PlaybackParams().setSpeed(selected));
                 }
             } catch (Exception ignored) {}
         });
 
         soundSlot.setOnClickListener(v -> {
             isMuted[0] = !isMuted[0];
+            MediaPlayer mp = playerRef[0];
             try {
-                if (playerRef[0] != null) playerRef[0].setVolume(isMuted[0] ? 0f : 1f, isMuted[0] ? 0f : 1f);
+                if (mp != null) mp.setVolume(isMuted[0] ? 0f : 1f, isMuted[0] ? 0f : 1f);
             } catch (Exception ignored) {}
             sound.setVisibility(isMuted[0] ? View.GONE : View.VISIBLE);
             muted.setVisibility(isMuted[0] ? View.VISIBLE : View.GONE);
@@ -1524,9 +1571,10 @@ public class MainActivity extends Activity {
         Runnable updater = new Runnable() {
             @Override public void run() {
                 if (generation != mediaRenderGeneration || currentScreen != SCREEN_MEDIA || currentMediaPostId != p.id) return;
+                MediaPlayer mp = playerRef[0];
                 try {
-                    if (duration[0] > 0 && !dragging[0]) {
-                        int pos = Math.max(0, video.getCurrentPosition());
+                    if (mp != null && duration[0] > 0 && !dragging[0]) {
+                        int pos = Math.max(0, mp.getCurrentPosition());
                         seek.setProgress(Math.min(1000, Math.round(pos * 1000f / duration[0])));
                         remaining.setText(formatVideoRemaining(Math.max(0, duration[0] - pos)));
                     }
@@ -1536,8 +1584,8 @@ public class MainActivity extends Activity {
         };
 
         setScreen(root);
-        video.setVideoPath(p.mediaPath);
-        video.requestFocus();
+        if (texture.isAvailable()) createPlayer.run();
+        else texture.post(createPlayer);
         uiHandler.post(updater);
     }
 
@@ -4417,25 +4465,114 @@ public class MainActivity extends Activity {
         frame.setClipToOutline(true);
         frame.setOutlineProvider(ViewOutlineProvider.BACKGROUND);
 
-        ImageView image = new ImageView(this);
-        image.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        setMediaPreviewImage(image, p.mediaPath, 1400, 1000);
-        image.setLayoutParams(new FrameLayout.LayoutParams(
+        ImageView placeholder = new ImageView(this);
+        placeholder.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        setMediaPreviewImage(placeholder, p.mediaPath, 1400, 1000);
+        placeholder.setLayoutParams(new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        frame.addView(image);
+        frame.addView(placeholder);
 
         if (isVideoPath(p.mediaPath)) {
-            XUi.IconView play = new XUi.IconView(this, XUi.IconView.PLAY, Color.WHITE);
-            FrameLayout.LayoutParams pp = new FrameLayout.LayoutParams(dp(58), dp(58), Gravity.CENTER);
-            play.setLayoutParams(pp);
-            play.setPadding(dp(15), dp(15), dp(15), dp(15));
-            play.setBackground(XUi.rounded(0xaa000000, 999, this));
-            frame.addView(play);
+            if (prefs.getBoolean("autoplay_videos", true)) {
+                AspectTextureView texture = new AspectTextureView(this);
+                texture.setOpaque(true);
+                texture.setAlpha(0f);
+                FrameLayout.LayoutParams tp = new FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.CENTER);
+                texture.setLayoutParams(tp);
+                frame.addView(texture);
+                bindInlineAutoplay(texture, placeholder, p.mediaPath);
+            } else {
+                XUi.IconView play = new XUi.IconView(this, XUi.IconView.PLAY, Color.WHITE);
+                FrameLayout.LayoutParams pp = new FrameLayout.LayoutParams(dp(58), dp(58), Gravity.CENTER);
+                play.setLayoutParams(pp);
+                play.setPadding(dp(15), dp(15), dp(15), dp(15));
+                play.setBackground(XUi.rounded(0xaa000000, 999, this));
+                frame.addView(play);
+            }
         }
 
         frame.setOnClickListener(v -> renderMedia(p.id));
         return frame;
     }
+
+    private void bindInlineAutoplay(AspectTextureView texture, ImageView placeholder, String path) {
+        final boolean[] started = {false};
+        final int[] bindGeneration = {-1};
+        final MediaPlayer[] ref = new MediaPlayer[1];
+
+        Runnable create = () -> {
+            if (started[0] || !texture.isAvailable() || !prefs.getBoolean("autoplay_videos", true)) return;
+            started[0] = true;
+            bindGeneration[0] = inlineVideoGeneration;
+
+            MediaPlayer mp = new MediaPlayer();
+            ref[0] = mp;
+            inlineVideoPlayers.add(mp);
+            try {
+                Surface surface = new Surface(texture.getSurfaceTexture());
+                mp.setSurface(surface);
+                surface.release();
+                mp.setDataSource(path);
+                mp.setLooping(prefs.getBoolean("autoplay_video_loop", true));
+                mp.setOnVideoSizeChangedListener((player, width, height) -> texture.setVideoSize(width, height));
+                mp.setOnPreparedListener(player -> {
+                    if (bindGeneration[0] != inlineVideoGeneration || !texture.isAttachedToWindow()) return;
+                    boolean muted = prefs.getBoolean("autoplay_video_muted", true);
+                    try { player.setVolume(muted ? 0f : 1f, muted ? 0f : 1f); } catch (Exception ignored) {}
+                    texture.animate().alpha(1f).setDuration(120).start();
+                    startInlineVisibilityLoop(texture, player, bindGeneration[0]);
+                });
+                mp.setOnErrorListener((player, what, extra) -> true);
+                mp.prepareAsync();
+            } catch (Exception e) {
+                inlineVideoPlayers.remove(mp);
+                try { mp.release(); } catch (Exception ignored) {}
+            }
+        };
+
+        texture.setSurfaceTextureListener(new TextureView.SurfaceTextureListener() {
+            @Override public void onSurfaceTextureAvailable(SurfaceTexture surface, int width, int height) { create.run(); }
+            @Override public void onSurfaceTextureSizeChanged(SurfaceTexture surface, int width, int height) {}
+            @Override public boolean onSurfaceTextureDestroyed(SurfaceTexture surface) {
+                MediaPlayer mp = ref[0];
+                if (mp != null) {
+                    inlineVideoPlayers.remove(mp);
+                    try { mp.stop(); } catch (Exception ignored) {}
+                    try { mp.release(); } catch (Exception ignored) {}
+                    ref[0] = null;
+                }
+                return true;
+            }
+            @Override public void onSurfaceTextureUpdated(SurfaceTexture surface) {}
+        });
+        texture.post(create);
+    }
+
+    private void startInlineVisibilityLoop(View preview, MediaPlayer player, int generation) {
+        Runnable watcher = new Runnable() {
+            @Override public void run() {
+                if (generation != inlineVideoGeneration || !inlineVideoPlayers.contains(player)
+                        || !preview.isAttachedToWindow() || currentScreen == SCREEN_MEDIA) return;
+                try {
+                    Rect visible = new Rect();
+                    boolean hasRect = preview.getGlobalVisibleRect(visible);
+                    long visibleArea = hasRect ? (long)Math.max(0, visible.width()) * Math.max(0, visible.height()) : 0L;
+                    long fullArea = (long)Math.max(1, preview.getWidth()) * Math.max(1, preview.getHeight());
+                    boolean mostlyVisible = visibleArea * 100L >= fullArea * 55L;
+
+                    if (mostlyVisible) {
+                        if (!player.isPlaying()) player.start();
+                    } else {
+                        if (player.isPlaying()) player.pause();
+                    }
+                } catch (Exception ignored) {}
+                uiHandler.postDelayed(this, 350);
+            }
+        };
+        uiHandler.post(watcher);
+    }
+
 
     private void setMediaPreviewImage(ImageView image, String path, int maxW, int maxH) {
         if (isVideoPath(path)) {
@@ -4474,7 +4611,8 @@ public class MainActivity extends Activity {
 
     private void setMediaImage(ImageView image, String path, int maxW, int maxH) {
         try {
-            if (path != null && path.toLowerCase(Locale.US).endsWith(".gif") && Build.VERSION.SDK_INT >= 28) {
+            if (path != null && path.toLowerCase(Locale.US).endsWith(".gif")
+                    && prefs.getBoolean("autoplay_gifs", true) && Build.VERSION.SDK_INT >= 28) {
                 ImageDecoder.Source source = ImageDecoder.createSource(new File(path));
                 Drawable drawable = ImageDecoder.decodeDrawable(source);
                 image.setImageDrawable(drawable);
