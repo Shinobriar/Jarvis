@@ -60,8 +60,18 @@ final class DirectMessage {
     long id;
     long senderId;
     long receiverId;
+    Long groupId;
     String body;
     long createdAt;
+}
+
+final class GroupChat {
+    long id;
+    String name;
+    String avatarPath;
+    long creatorId;
+    long createdAt;
+    int memberCount;
 }
 
 
