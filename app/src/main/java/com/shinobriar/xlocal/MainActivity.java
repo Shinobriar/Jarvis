@@ -952,8 +952,10 @@ public class MainActivity extends Activity {
         authorRow.addView(avatar);
 
         LinearLayout identity = vbox();
+        identity.setBackgroundColor(Color.TRANSPARENT);
         identity.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         LinearLayout nameRow = hbox();
+        nameRow.setBackgroundColor(Color.TRANSPARENT);
         TextView name = tv(a.name, 16, pal.fg, true);
         name.setOnClickListener(v -> renderProfile(a.id));
         nameRow.addView(name);
@@ -1625,7 +1627,7 @@ public class MainActivity extends Activity {
         LinearLayout row = hbox();
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setPadding(dp(18), dp(9), dp(18), dp(9));
-        row.setBackgroundColor(overlay ? 0x22000000 : Color.BLACK);
+        row.setBackgroundColor(overlay ? Color.TRANSPARENT : Color.BLACK);
 
         XUi.AvatarView avatar = new XUi.AvatarView(this, a);
         LinearLayout.LayoutParams ap = new LinearLayout.LayoutParams(dp(46), dp(46));
