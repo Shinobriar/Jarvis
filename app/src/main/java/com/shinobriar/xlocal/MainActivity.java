@@ -83,6 +83,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -2841,7 +2842,8 @@ public class MainActivity extends Activity {
                                     String value = edit.getText().toString().trim();
                                     if (!value.isEmpty()) {
                                         db.updateMessage(m.id, currentAccountId, value);
-                                        renderChat(currentChatId);
+                                        if (m.groupId != null) renderGroupChat(m.groupId);
+                                        else renderChat(currentChatId);
                                     }
                                 }).show();
                     } else {
@@ -2851,7 +2853,8 @@ public class MainActivity extends Activity {
                                 .setNegativeButton("Cancel", null)
                                 .setPositiveButton("Delete", (x,w) -> {
                                     db.deleteMessage(m.id, currentAccountId);
-                                    renderChat(currentChatId);
+                                    if (m.groupId != null) renderGroupChat(m.groupId);
+                                    else renderChat(currentChatId);
                                 }).show();
                     }
                 }).show();
@@ -4230,8 +4233,8 @@ public class MainActivity extends Activity {
         EditText reposts = numberField("Reposts", p.reposts);
         EditText replies = numberField("Replies", p.replies);
         EditText bookmarks = numberField("Bookmarks", p.bookmarks);
-        EditText mins = numberField("Minutes ago", Math.max(0, (System.currentTimeMillis() - p.createdAt) / 60000L));
         EditText boost = numberField("Recommendation boost", (long)p.viralBoost);
+        TextView date = pill("Date: " + formatDirectorDate(p.createdAt), false);
         TextView author = pill("Author: @" + account(p.authorId).handle, false);
 
         form.addView(body);
@@ -4240,12 +4243,14 @@ public class MainActivity extends Activity {
         form.addView(reposts);
         form.addView(replies);
         form.addView(bookmarks);
-        form.addView(mins);
+        form.addView(date);
         form.addView(boost);
         form.addView(author);
 
         final long[] chosenAuthor = {p.authorId};
+        final long[] chosenDate = {p.createdAt};
         author.setOnClickListener(v -> chooseDirectorAuthor(chosenAuthor, author));
+        date.setOnClickListener(v -> showDirectorDatePicker(chosenDate, date));
 
         new AlertDialog.Builder(this)
                 .setTitle("Edit local post")
@@ -4259,13 +4264,42 @@ public class MainActivity extends Activity {
                     p.reposts = parseLong(reposts, p.reposts);
                     p.replies = parseLong(replies, p.replies);
                     p.bookmarks = parseLong(bookmarks, p.bookmarks);
-                    long minutes = Math.max(0, parseLong(mins, 0));
-                    p.createdAt = System.currentTimeMillis() - minutes * 60000L;
+                    p.createdAt = chosenDate[0];
                     p.viralBoost = parseLong(boost, (long)p.viralBoost);
                     db.updatePostDirector(p);
                     refreshCurrent();
                 })
                 .show();
+    }
+
+    private String formatDirectorDate(long when) {
+        return new SimpleDateFormat("dd MMM yyyy · HH:mm", Locale.getDefault()).format(new Date(when));
+    }
+
+    private void showDirectorDatePicker(long[] chosenDate, TextView button) {
+        Calendar cal = Calendar.getInstance();
+        cal.setTimeInMillis(chosenDate[0] > 0 ? chosenDate[0] : System.currentTimeMillis());
+
+        DatePickerDialog date = new DatePickerDialog(this, (view, year, month, day) -> {
+            Calendar picked = Calendar.getInstance();
+            picked.setTimeInMillis(cal.getTimeInMillis());
+            picked.set(Calendar.YEAR, year);
+            picked.set(Calendar.MONTH, month);
+            picked.set(Calendar.DAY_OF_MONTH, day);
+
+            TimePickerDialog time = new TimePickerDialog(this, (timeView, hour, minute) -> {
+                picked.set(Calendar.HOUR_OF_DAY, hour);
+                picked.set(Calendar.MINUTE, minute);
+                picked.set(Calendar.SECOND, 0);
+                picked.set(Calendar.MILLISECOND, 0);
+                chosenDate[0] = picked.getTimeInMillis();
+                button.setText("Date: " + formatDirectorDate(chosenDate[0]));
+            }, cal.get(Calendar.HOUR_OF_DAY), cal.get(Calendar.MINUTE), true);
+            time.setTitle("Choose time");
+            time.show();
+        }, cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH));
+        date.setTitle("Choose date");
+        date.show();
     }
 
     private EditText numberField(String hint, long value) {
@@ -4897,6 +4931,7 @@ public class MainActivity extends Activity {
             if (requestCode == PICK_POST_MEDIA || requestCode == PICK_GIF_MEDIA || requestCode == CAPTURE_POST_MEDIA) {
                 showComposer(composeReplyTo, composeQuoteOf);
             }
+            if (requestCode == PICK_GROUP_PHOTO || requestCode == CAPTURE_GROUP_PHOTO) pendingGroupPhotoId = -1;
             return;
         }
 
@@ -5381,7 +5416,7 @@ public class MainActivity extends Activity {
         long h = min / 60;
         if (h < 24) return h + "h";
         long d = h / 24;
-        if (d < 7) return d + "d";
-        return new SimpleDateFormat("MMM d", Locale.US).format(new Date(when));
+        if (d <= 7) return d + "d";
+        return new SimpleDateFormat("dd MMM yyyy · HH:mm", Locale.getDefault()).format(new Date(when));
     }
 }
