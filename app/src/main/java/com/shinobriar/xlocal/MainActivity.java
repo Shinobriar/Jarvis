@@ -4598,6 +4598,30 @@ public class MainActivity extends Activity {
         return frame;
     }
 
+    private float videoAspectRatio(String path) {
+        if (path == null) return 1f;
+        MediaMetadataRetriever retriever = new MediaMetadataRetriever();
+        try {
+            retriever.setDataSource(path);
+            String widthValue = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH);
+            String heightValue = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT);
+            String rotationValue = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION);
+            int width = widthValue == null ? 0 : Integer.parseInt(widthValue);
+            int height = heightValue == null ? 0 : Integer.parseInt(heightValue);
+            int rotation = rotationValue == null ? 0 : Integer.parseInt(rotationValue);
+            if (rotation == 90 || rotation == 270) {
+                int swap = width;
+                width = height;
+                height = swap;
+            }
+            if (width > 0 && height > 0) return width / (float) height;
+        } catch (Exception ignored) {
+        } finally {
+            try { retriever.release(); } catch (Exception ignored) {}
+        }
+        return 1f;
+    }
+
     private float mediaAspectRatio(String path) {
         if (path == null) return 1f;
         if (isVideoPath(path)) return videoAspectRatio(path);
