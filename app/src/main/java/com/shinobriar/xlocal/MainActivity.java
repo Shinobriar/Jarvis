@@ -893,7 +893,9 @@ public class MainActivity extends Activity {
 
         if (p.mediaPath != null && new File(p.mediaPath).exists()) {
             View media = postMediaPreview(p, dp(260), 14);
-            LinearLayout.LayoutParams ip = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(260));
+            LinearLayout.LayoutParams ip = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    isVideoPath(p.mediaPath) ? ViewGroup.LayoutParams.WRAP_CONTENT : dp(260));
             ip.setMargins(0, dp(4), dp(4), dp(7));
             media.setLayoutParams(ip);
             content.addView(media);
@@ -991,7 +993,9 @@ public class MainActivity extends Activity {
 
         if (p.mediaPath != null && new File(p.mediaPath).exists()) {
             View media = postMediaPreview(p, dp(340), 16);
-            LinearLayout.LayoutParams ip = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(340));
+            LinearLayout.LayoutParams ip = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    isVideoPath(p.mediaPath) ? ViewGroup.LayoutParams.WRAP_CONTENT : dp(340));
             ip.setMargins(0, 0, 0, dp(12));
             media.setLayoutParams(ip);
             card.addView(media);
@@ -4460,19 +4464,29 @@ public class MainActivity extends Activity {
     }
 
     private View postMediaPreview(Post p, int heightPx, int radiusDp) {
-        FrameLayout frame = new FrameLayout(this);
+        final boolean video = isVideoPath(p.mediaPath);
+        FrameLayout frame;
+        if (video) {
+            AspectFrameLayout aspectFrame = new AspectFrameLayout(this);
+            aspectFrame.setAspectRatio(videoAspectRatio(p.mediaPath));
+            frame = aspectFrame;
+        } else {
+            frame = new FrameLayout(this);
+        }
+
         frame.setBackground(XUi.rounded(pal.surface, radiusDp, this));
         frame.setClipToOutline(true);
         frame.setOutlineProvider(ViewOutlineProvider.BACKGROUND);
 
         ImageView placeholder = new ImageView(this);
-        placeholder.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        setMediaPreviewImage(placeholder, p.mediaPath, 1400, 1000);
+        placeholder.setScaleType(video ? ImageView.ScaleType.FIT_CENTER : ImageView.ScaleType.CENTER_CROP);
+        setMediaPreviewImage(placeholder, p.mediaPath, 1400, 1400);
+        placeholder.setBackgroundColor(Color.BLACK);
         placeholder.setLayoutParams(new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         frame.addView(placeholder);
 
-        if (isVideoPath(p.mediaPath)) {
+        if (video) {
             if (prefs.getBoolean("autoplay_videos", true)) {
                 AspectTextureView texture = new AspectTextureView(this);
                 texture.setOpaque(true);
@@ -4495,6 +4509,29 @@ public class MainActivity extends Activity {
         frame.setOnClickListener(v -> renderMedia(p.id));
         return frame;
     }
+
+    private float videoAspectRatio(String path) {
+        if (path == null) return 1f;
+        MediaMetadataRetriever retriever = new MediaMetadataRetriever();
+        try {
+            retriever.setDataSource(path);
+            int width = Integer.parseInt(retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH));
+            int height = Integer.parseInt(retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT));
+            String rotationValue = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION);
+            int rotation = rotationValue == null ? 0 : Integer.parseInt(rotationValue);
+            if (rotation == 90 || rotation == 270) {
+                int swap = width;
+                width = height;
+                height = swap;
+            }
+            if (width > 0 && height > 0) return width / (float) height;
+        } catch (Exception ignored) {
+        } finally {
+            try { retriever.release(); } catch (Exception ignored) {}
+        }
+        return 1f;
+    }
+
 
     private void bindInlineAutoplay(AspectTextureView texture, ImageView placeholder, String path) {
         final boolean[] started = {false};
