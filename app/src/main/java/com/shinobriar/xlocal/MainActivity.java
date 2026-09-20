@@ -3699,7 +3699,7 @@ public class MainActivity extends Activity {
         LinearLayout toolbar = hbox();
         toolbar.setGravity(Gravity.CENTER_VERTICAL);
         toolbar.setPadding(dp(12), dp(10), dp(12), dp(10));
-        toolbar.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(76)));
+        toolbar.setLayoutParams(new HorizontalScrollView.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(76)));
 
         XUi.IconView back = editorIcon(XUi.IconView.BACK);
         toolbar.addView(back);
@@ -3723,7 +3723,15 @@ public class MainActivity extends Activity {
 
         XUi.IconView more = editorIcon(XUi.IconView.MORE);
         toolbar.addView(more);
-        root.addView(toolbar);
+
+        HorizontalScrollView toolbarScroll = new HorizontalScrollView(this);
+        toolbarScroll.setHorizontalScrollBarEnabled(false);
+        toolbarScroll.setFillViewport(false);
+        toolbarScroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        toolbarScroll.setLayoutParams(new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(76)));
+        toolbarScroll.addView(toolbar);
+        root.addView(toolbarScroll);
 
         PostImageEditorView editor = new PostImageEditorView(this);
         editor.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
