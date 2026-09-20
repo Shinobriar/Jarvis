@@ -4082,7 +4082,8 @@ public class MainActivity extends Activity {
         EditText reposts = numberField("Reposts", p.reposts);
         EditText replies = numberField("Replies", p.replies);
         EditText bookmarks = numberField("Bookmarks", p.bookmarks);
-        EditText mins = numberField("Minutes ago", Math.max(0, (System.currentTimeMillis() - p.createdAt) / 60000L));
+        final long[] chosenDate = {p.createdAt};
+        TextView date = pill("Date: " + formatPostDateEditor(chosenDate[0]), false);
         EditText boost = numberField("Recommendation boost", (long)p.viralBoost);
         TextView author = pill("Author: @" + account(p.authorId).handle, false);
 
@@ -4092,12 +4093,13 @@ public class MainActivity extends Activity {
         form.addView(reposts);
         form.addView(replies);
         form.addView(bookmarks);
-        form.addView(mins);
+        form.addView(date);
         form.addView(boost);
         form.addView(author);
 
         final long[] chosenAuthor = {p.authorId};
         author.setOnClickListener(v -> chooseDirectorAuthor(chosenAuthor, author));
+        date.setOnClickListener(v -> showDirectorDatePicker(chosenDate, date));
 
         new AlertDialog.Builder(this)
                 .setTitle("Edit local post")
@@ -4111,13 +4113,43 @@ public class MainActivity extends Activity {
                     p.reposts = parseLong(reposts, p.reposts);
                     p.replies = parseLong(replies, p.replies);
                     p.bookmarks = parseLong(bookmarks, p.bookmarks);
-                    long minutes = Math.max(0, parseLong(mins, 0));
-                    p.createdAt = System.currentTimeMillis() - minutes * 60000L;
+                    p.createdAt = chosenDate[0];
                     p.viralBoost = parseLong(boost, (long)p.viralBoost);
                     db.updatePostDirector(p);
                     refreshCurrent();
                 })
                 .show();
+    }
+
+    private String formatPostDateEditor(long when) {
+        return new SimpleDateFormat("yyyy-MM-dd · HH:mm", Locale.getDefault()).format(new Date(when));
+    }
+
+    private void showDirectorDatePicker(final long[] chosenDate, TextView button) {
+        Calendar calendar = Calendar.getInstance();
+        calendar.setTimeInMillis(chosenDate[0]);
+
+        DatePickerDialog datePicker = new DatePickerDialog(this, (view, year, month, dayOfMonth) -> {
+            Calendar picked = Calendar.getInstance();
+            picked.setTimeInMillis(chosenDate[0]);
+            picked.set(Calendar.YEAR, year);
+            picked.set(Calendar.MONTH, month);
+            picked.set(Calendar.DAY_OF_MONTH, dayOfMonth);
+
+            TimePickerDialog timePicker = new TimePickerDialog(this, (timeView, hourOfDay, minute) -> {
+                picked.set(Calendar.HOUR_OF_DAY, hourOfDay);
+                picked.set(Calendar.MINUTE, minute);
+                picked.set(Calendar.SECOND, 0);
+                picked.set(Calendar.MILLISECOND, 0);
+                chosenDate[0] = picked.getTimeInMillis();
+                button.setText("Date: " + formatPostDateEditor(chosenDate[0]));
+            }, calendar.get(Calendar.HOUR_OF_DAY), calendar.get(Calendar.MINUTE), true);
+            timePicker.setTitle("Choose time");
+            timePicker.show();
+        }, calendar.get(Calendar.YEAR), calendar.get(Calendar.MONTH), calendar.get(Calendar.DAY_OF_MONTH));
+
+        datePicker.setTitle("Choose post date");
+        datePicker.show();
     }
 
     private EditText numberField(String hint, long value) {
@@ -5248,14 +5280,19 @@ public class MainActivity extends Activity {
     }
 
     private String timeAgo(long when) {
-        long sec = Math.max(0, (System.currentTimeMillis() - when) / 1000);
+        long diff = System.currentTimeMillis() - when;
+        if (diff < 0) {
+            return new SimpleDateFormat("MMM d, yyyy · HH:mm", Locale.getDefault()).format(new Date(when));
+        }
+
+        long sec = diff / 1000L;
         if (sec < 60) return sec + "s";
-        long min = sec / 60;
+        long min = sec / 60L;
         if (min < 60) return min + "m";
-        long h = min / 60;
-        if (h < 24) return h + "h";
-        long d = h / 24;
-        if (d < 7) return d + "d";
-        return new SimpleDateFormat("MMM d", Locale.US).format(new Date(when));
+        long hours = min / 60L;
+        if (hours < 24) return hours + "h";
+        long days = hours / 24L;
+        if (days <= 7) return days + "d";
+        return new SimpleDateFormat("MMM d, yyyy · HH:mm", Locale.getDefault()).format(new Date(when));
     }
 }
