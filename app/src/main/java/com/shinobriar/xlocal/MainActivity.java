@@ -2651,6 +2651,7 @@ public class MainActivity extends Activity {
         if (group == null) return;
 
         LinearLayout form = dialogForm();
+        final AlertDialog[] holder = new AlertDialog[1];
 
         LinearLayout hero = hbox();
         hero.setGravity(Gravity.CENTER_VERTICAL);
@@ -2670,28 +2671,44 @@ public class MainActivity extends Activity {
         hero.addView(identity);
         form.addView(hero);
 
-        form.addView(groupInfoAction(XUi.IconView.CAMERA, "Edit group photo", () -> showGroupPhotoOptions(groupId)));
-        form.addView(groupInfoAction(XUi.IconView.PEOPLE_GROUP, "Edit group name", () -> showRenameGroup(groupId)));
-        form.addView(groupInfoAction(XUi.IconView.GROUP_ADD, "Add members", () -> showAddGroupMembers(groupId)));
-        form.addView(groupInfoAction(XUi.IconView.PEOPLE_GROUP, "View members", () -> showGroupMembers(groupId)));
+        form.addView(groupInfoAction(XUi.IconView.CAMERA, "Edit group photo", () -> {
+            if (holder[0] != null) holder[0].dismiss();
+            showGroupPhotoOptions(groupId);
+        }));
+        form.addView(groupInfoAction(XUi.IconView.PEOPLE_GROUP, "Edit group name", () -> {
+            if (holder[0] != null) holder[0].dismiss();
+            showRenameGroup(groupId);
+        }));
+        form.addView(groupInfoAction(XUi.IconView.GROUP_ADD, "Add members", () -> {
+            if (holder[0] != null) holder[0].dismiss();
+            showAddGroupMembers(groupId);
+        }));
+        form.addView(groupInfoAction(XUi.IconView.PEOPLE_GROUP, "View members", () -> {
+            if (holder[0] != null) holder[0].dismiss();
+            showGroupMembers(groupId);
+        }));
 
         TextView leave = tv("Leave conversation", 15, 0xffff334b, true);
         leave.setPadding(dp(12), dp(14), dp(12), dp(14));
-        leave.setOnClickListener(v -> new AlertDialog.Builder(this)
-                .setTitle("Leave this group?")
-                .setMessage("The selected local account will no longer see this group conversation.")
-                .setNegativeButton("Cancel", null)
-                .setPositiveButton("Leave", (d,w) -> {
-                    db.leaveGroup(groupId, currentAccountId);
-                    renderMessages();
-                }).show());
+        leave.setOnClickListener(v -> {
+            if (holder[0] != null) holder[0].dismiss();
+            new AlertDialog.Builder(this)
+                    .setTitle("Leave this group?")
+                    .setMessage("The selected local account will no longer see this group conversation.")
+                    .setNegativeButton("Cancel", null)
+                    .setPositiveButton("Leave", (d,w) -> {
+                        db.leaveGroup(groupId, currentAccountId);
+                        renderMessages();
+                    }).show();
+        });
         form.addView(leave);
 
-        new AlertDialog.Builder(this)
+        holder[0] = new AlertDialog.Builder(this)
                 .setTitle("Group info")
                 .setView(form)
                 .setPositiveButton("Done", null)
-                .show();
+                .create();
+        holder[0].show();
     }
 
     private View groupInfoAction(int iconType, String label, Runnable action) {
