@@ -442,6 +442,7 @@ public class MainActivity extends Activity {
         state.profileTab = profileTab;
         state.postId = currentPostId;
         state.chatId = currentChatId;
+        state.groupId = currentGroupId;
         state.mediaPostId = currentMediaPostId;
         state.threadReplyLimit = currentThreadReplyLimit;
         state.followFollowing = currentFollowListFollowing;
@@ -454,6 +455,7 @@ public class MainActivity extends Activity {
         if (targetScreen == SCREEN_PROFILE) return currentProfileId == targetId;
         if (targetScreen == SCREEN_POST) return currentPostId == targetId;
         if (targetScreen == SCREEN_CHAT) return currentChatId == targetId;
+        if (targetScreen == SCREEN_GROUP_CHAT) return currentGroupId == targetId;
         if (targetScreen == SCREEN_MEDIA) return currentMediaPostId == targetId;
         if (targetScreen == SCREEN_FOLLOW_LIST) {
             return currentProfileId == targetId && currentFollowListFollowing == targetFlag;
@@ -504,6 +506,9 @@ public class MainActivity extends Activity {
                     renderBookmarks();
                 } else if (state.screen == SCREEN_CHAT && state.chatId > 0 && db.getAccount(state.chatId) != null) {
                     renderChat(state.chatId);
+                } else if (state.screen == SCREEN_GROUP_CHAT && state.groupId > 0 && db.getGroup(state.groupId) != null
+                        && db.isGroupMember(state.groupId, currentAccountId)) {
+                    renderGroupChat(state.groupId);
                 } else if (state.screen == SCREEN_DRAFTS) {
                     renderDrafts();
                 } else if (state.screen == SCREEN_FOLLOW_LIST && state.profileId > 0) {
@@ -4796,6 +4801,7 @@ public class MainActivity extends Activity {
         else if (currentScreen == SCREEN_POST && currentPostId > 0) renderPost(currentPostId);
         else if (currentScreen == SCREEN_BOOKMARKS) renderBookmarks();
         else if (currentScreen == SCREEN_CHAT && currentChatId > 0) renderChat(currentChatId);
+        else if (currentScreen == SCREEN_GROUP_CHAT && currentGroupId > 0) renderGroupChat(currentGroupId);
         else if (currentScreen == SCREEN_DRAFTS) renderDrafts();
         else if (currentScreen == SCREEN_FOLLOW_LIST && currentProfileId > 0) renderFollowList(currentProfileId, currentFollowListFollowing);
         else if (currentScreen == SCREEN_MEDIA && currentMediaPostId > 0) renderMedia(currentMediaPostId);
