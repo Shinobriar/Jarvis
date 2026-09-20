@@ -3009,6 +3009,7 @@ public class MainActivity extends Activity {
         root.addView(drawerAction(XUi.IconView.PLUS, "Create account", () -> { d.dismiss(); showCreateAccount(); }));
         root.addView(drawerAction(XUi.IconView.PROFILE, "Generate random accounts", () -> { d.dismiss(); showRandomAccountGenerator(); }));
         root.addView(drawerAction(XUi.IconView.SETTINGS, "Bot settings", () -> { d.dismiss(); showBotSettings(); }));
+        root.addView(drawerAction(XUi.IconView.SETTINGS, "Settings", () -> { d.dismiss(); showAppSettings(); }));
 
         View divider2 = XUi.divider(this, pal.border);
         LinearLayout.LayoutParams divp2 = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1));
@@ -3230,6 +3231,58 @@ public class MainActivity extends Activity {
         String[] bits = {"unfortunately online","i post and then regret it","no thoughts just posting","probably awake","professional nobody","do not perceive me","normal about things","posting through it","made of bad opinions","here for no reason","certified yapper","lurking mostly","internet resident"};
         if (random.nextInt(100) < 35) return bits[random.nextInt(bits.length)] + " · " + persona;
         return bits[random.nextInt(bits.length)];
+    }
+
+    private void showAppSettings() {
+        LinearLayout form = dialogForm();
+
+        CheckBox autoplayVideos = checkbox("Autoplay videos in timelines");
+        autoplayVideos.setChecked(prefs.getBoolean("autoplay_videos", true));
+
+        CheckBox muteAutoplay = checkbox("Mute autoplay videos");
+        muteAutoplay.setChecked(prefs.getBoolean("autoplay_video_muted", true));
+
+        CheckBox loopAutoplay = checkbox("Loop autoplay videos");
+        loopAutoplay.setChecked(prefs.getBoolean("autoplay_video_loop", true));
+
+        CheckBox autoplayGifs = checkbox("Autoplay GIFs");
+        autoplayGifs.setChecked(prefs.getBoolean("autoplay_gifs", true));
+
+        CheckBox swipeTabs = checkbox("Swipe sideways between main tabs");
+        swipeTabs.setChecked(prefs.getBoolean("swipe_tabs", true));
+
+        CheckBox swipeSidebar = checkbox("Swipe right from Feed's left edge for sidebar");
+        swipeSidebar.setChecked(prefs.getBoolean("swipe_sidebar", true));
+
+        TextView note = tv(
+                "Video autoplay is visibility-aware: timeline videos pause when most of the preview is off-screen. " +
+                "The mute option only affects automatic timeline playback; opening a video uses the player's own sound control.",
+                13, pal.secondary, false);
+        note.setPadding(0, dp(8), 0, dp(4));
+
+        form.addView(autoplayVideos);
+        form.addView(muteAutoplay);
+        form.addView(loopAutoplay);
+        form.addView(autoplayGifs);
+        form.addView(swipeTabs);
+        form.addView(swipeSidebar);
+        form.addView(note);
+
+        new AlertDialog.Builder(this)
+                .setTitle("Settings")
+                .setView(form)
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Save", (dialog, which) -> {
+                    prefs.edit()
+                            .putBoolean("autoplay_videos", autoplayVideos.isChecked())
+                            .putBoolean("autoplay_video_muted", muteAutoplay.isChecked())
+                            .putBoolean("autoplay_video_loop", loopAutoplay.isChecked())
+                            .putBoolean("autoplay_gifs", autoplayGifs.isChecked())
+                            .putBoolean("swipe_tabs", swipeTabs.isChecked())
+                            .putBoolean("swipe_sidebar", swipeSidebar.isChecked())
+                            .apply();
+                    refreshCurrent();
+                }).show();
     }
 
     private void showBotSettings() {
