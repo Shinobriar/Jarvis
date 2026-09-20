@@ -2271,13 +2271,28 @@ public class MainActivity extends Activity {
         LinearLayout shell = vbox();
         shell.setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         frame.addView(shell);
-        shell.addView(topBar("Messages", false));
+
+        LinearLayout header = topBar("Messages", false);
+        XUi.IconView composeDm = new XUi.IconView(this, XUi.IconView.COMPOSE_DM, pal.fg);
+        composeDm.setLayoutParams(new LinearLayout.LayoutParams(dp(44), dp(44)));
+        composeDm.setPadding(dp(9), dp(9), dp(9), dp(9));
+        composeDm.setOnClickListener(v -> showNewMessagePicker());
+        header.addView(composeDm);
+        shell.addView(header);
         shell.addView(XUi.divider(this, pal.border));
 
         LinearLayout list = vbox();
+        boolean any = false;
+
+        List<GroupChat> groups = db.groupsFor(currentAccountId);
+        for (GroupChat group : groups) {
+            any = true;
+            list.addView(groupConversationRow(group));
+            list.addView(XUi.divider(this, pal.border));
+        }
+
         List<Account> accounts = db.listVisibleAccounts(currentAccountId);
         Collections.sort(accounts, (a, b) -> Boolean.compare(db.hasMessages(currentAccountId, b.id), db.hasMessages(currentAccountId, a.id)));
-        boolean any = false;
         for (Account a : accounts) {
             if (a.id == currentAccountId) continue;
             any = true;
@@ -2286,7 +2301,10 @@ public class MainActivity extends Activity {
             list.addView(row);
             list.addView(XUi.divider(this, pal.border));
         }
-        if (!any) list.addView(emptyState("No one else is here", "Create another local account to start a private conversation."));
+
+        if (!any) {
+            list.addView(emptyState("No one else is here", "Create another local account to start a private conversation."));
+        }
 
         ScrollView scroll = scrollOf(list);
         scroll.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
@@ -2294,6 +2312,128 @@ public class MainActivity extends Activity {
         shell.addView(bottomNav(SCREEN_MESSAGES));
         setScreen(frame);
     }
+
+    private View groupConversationRow(GroupChat group) {
+        LinearLayout row = hbox();
+        row.setPadding(dp(14), dp(11), dp(14), dp(11));
+        row.setGravity(Gravity.CENTER_VERTICAL);
+
+        View avatar = groupAvatarView(group, 50);
+        LinearLayout.LayoutParams ap = new LinearLayout.LayoutParams(dp(50), dp(50));
+        ap.setMargins(0, 0, dp(12), 0);
+        avatar.setLayoutParams(ap);
+        row.addView(avatar);
+
+        LinearLayout text = vbox();
+        text.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        TextView name = tv(group.name == null || group.name.trim().isEmpty() ? "Group" : group.name, 16, pal.fg, true);
+        name.setMaxLines(1);
+        text.addView(name);
+
+        String last = db.groupLastMessage(group.id);
+        String subtitle = last == null || last.trim().isEmpty()
+                ? group.memberCount + (group.memberCount == 1 ? " member" : " members")
+                : last;
+        TextView sub = tv(subtitle, 14, pal.secondary, false);
+        sub.setMaxLines(1);
+        sub.setEllipsize(TextUtils.TruncateAt.END);
+        text.addView(sub);
+        row.addView(text);
+
+        row.setOnClickListener(v -> renderGroupChat(group.id));
+        return row;
+    }
+
+    private View groupAvatarView(GroupChat group, int sizeDp) {
+        FrameLayout frame = new FrameLayout(this);
+        frame.setBackground(XUi.rounded(pal.surface, 999, this));
+        frame.setClipToOutline(true);
+        frame.setOutlineProvider(ViewOutlineProvider.BACKGROUND);
+
+        if (group != null && group.avatarPath != null && new File(group.avatarPath).exists()) {
+            ImageView image = new ImageView(this);
+            image.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            image.setImageBitmap(decodeScaled(group.avatarPath, 512, 512));
+            image.setLayoutParams(new FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+            frame.addView(image);
+        } else {
+            XUi.IconView people = new XUi.IconView(this, XUi.IconView.PEOPLE_GROUP, pal.fg);
+            FrameLayout.LayoutParams ip = new FrameLayout.LayoutParams(dp(sizeDp * .58f), dp(sizeDp * .58f), Gravity.CENTER);
+            people.setLayoutParams(ip);
+            people.setPadding(dp(2), dp(2), dp(2), dp(2));
+            frame.addView(people);
+        }
+        return frame;
+    }
+
+    private void showNewMessagePicker() {
+        List<Account> visible = db.listVisibleAccounts(currentAccountId);
+        ArrayList<Account> choices = new ArrayList<>();
+        for (Account account : visible) if (account.id != currentAccountId) choices.add(account);
+
+        if (choices.isEmpty()) {
+            Toast.makeText(this, "Create another local account first", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        String[] labels = new String[choices.size()];
+        boolean[] checked = new boolean[choices.size()];
+        for (int i = 0; i < choices.size(); i++) {
+            Account a = choices.get(i);
+            labels[i] = a.name + "  @" + a.handle;
+        }
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("New message")
+                .setMultiChoiceItems(labels, checked, (d, which, isChecked) -> checked[which] = isChecked)
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Next", null)
+                .create();
+
+        dialog.setOnShowListener(x -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            ArrayList<Long> selected = new ArrayList<>();
+            for (int i = 0; i < checked.length; i++) if (checked[i]) selected.add(choices.get(i).id);
+
+            if (selected.isEmpty()) {
+                Toast.makeText(this, "Choose at least one account", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            dialog.dismiss();
+            if (selected.size() == 1) renderChat(selected.get(0));
+            else showCreateGroupDialog(selected);
+        }));
+        dialog.show();
+    }
+
+    private void showCreateGroupDialog(List<Long> memberIds) {
+        LinearLayout form = dialogForm();
+        EditText name = field("Group name", false);
+
+        ArrayList<String> defaults = new ArrayList<>();
+        for (Long id : memberIds) {
+            Account a = db.getAccount(id);
+            if (a != null && defaults.size() < 3) defaults.add(a.name);
+        }
+        if (!defaults.isEmpty()) name.setText(TextUtils.join(", ", defaults));
+        form.addView(name);
+
+        TextView note = tv("You can set or edit the group photo after creating it.", 13, pal.secondary, false);
+        note.setPadding(0, dp(6), 0, 0);
+        form.addView(note);
+
+        new AlertDialog.Builder(this)
+                .setTitle("Create group")
+                .setView(form)
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Create", (d,w) -> {
+                    long groupId = db.createGroup(name.getText().toString(), null, currentAccountId, memberIds);
+                    if (groupId > 0) renderGroupChat(groupId);
+                }).show();
+    }
+
 
     private void renderChat(long otherId) {
         Account other = db.getAccount(otherId);
