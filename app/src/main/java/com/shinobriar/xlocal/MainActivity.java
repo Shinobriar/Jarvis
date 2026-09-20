@@ -2885,7 +2885,8 @@ public class MainActivity extends Activity {
                                     String value = edit.getText().toString().trim();
                                     if (!value.isEmpty()) {
                                         db.updateMessage(m.id, currentAccountId, value);
-                                        renderChat(currentChatId);
+                                        if (m.groupId > 0) renderGroupChat(m.groupId);
+                                        else renderChat(currentChatId);
                                     }
                                 }).show();
                     } else {
@@ -2895,7 +2896,8 @@ public class MainActivity extends Activity {
                                 .setNegativeButton("Cancel", null)
                                 .setPositiveButton("Delete", (x,w) -> {
                                     db.deleteMessage(m.id, currentAccountId);
-                                    renderChat(currentChatId);
+                                    if (m.groupId > 0) renderGroupChat(m.groupId);
+                                    else renderChat(currentChatId);
                                 }).show();
                     }
                 }).show();
