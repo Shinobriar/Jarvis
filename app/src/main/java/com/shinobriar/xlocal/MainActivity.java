@@ -187,9 +187,15 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        SharedPreferences startupPrefs = getSharedPreferences("xlocal_prefs", MODE_PRIVATE);
+        int startupTheme = startupPrefs.getInt("theme_mode", 0);
+        if (startupTheme == 2) setTheme(R.style.AppThemeLight);
+        else if (startupTheme == 1) setTheme(R.style.AppThemeDim);
+        else setTheme(R.style.AppThemeLightsOut);
+
         super.onCreate(savedInstanceState);
-        prefs = getSharedPreferences("xlocal_prefs", MODE_PRIVATE);
-        themeMode = prefs.getInt("theme_mode", 0);
+        prefs = startupPrefs;
+        themeMode = startupTheme;
         pal = new XUi.Palette(themeMode);
         db = new LocalDb(this);
         currentAccountId = prefs.getLong("current_account", -1);
@@ -3916,12 +3922,14 @@ public class MainActivity extends Activity {
         new AlertDialog.Builder(this)
                 .setTitle("Appearance")
                 .setSingleChoiceItems(items, themeMode, (d, which) -> {
+                    if (themeMode == which) {
+                        d.dismiss();
+                        return;
+                    }
                     themeMode = which;
                     prefs.edit().putInt("theme_mode", themeMode).apply();
-                    pal = new XUi.Palette(themeMode);
-                    applySystemBars();
                     d.dismiss();
-                    refreshCurrent();
+                    recreate();
                 })
                 .show();
     }
