@@ -7,24 +7,39 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
+
       - name: Install Android SDK
         run: |
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0"
+
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.11.1'
-      - name: Unpack source
-        run: mkdir apklab && unzip -q apklab-src.zip -d apklab
+
+      - name: Reconstruct and verify source
+        run: |
+          cat srcparts/0* | tr -d '\n\r ' | base64 -d > apklab-src.zip
+          echo "486e5524198c82701935c3595d1ba712a4078c80151dfb589cfc443fa8abd038  apklab-src.zip" | sha256sum -c -
+          mkdir apklab
+          unzip -q apklab-src.zip -d apklab
+
       - name: Build unsigned release
         working-directory: apklab
         run: gradle :app:assembleRelease --stacktrace
+
+      - name: Collect signer
+        run: cp "$ANDROID_HOME/build-tools/36.0.0/lib/apksigner.jar" apklab/apksigner.jar
+
       - uses: actions/upload-artifact@v4
         with:
-          name: APK-Lab-v1.1.0-unsigned
-          path: apklab/app/build/outputs/apk/release/app-release-unsigned.apk
+          name: APK-Lab-v1.1.0-build
+          path: |
+            apklab/app/build/outputs/apk/release/app-release-unsigned.apk
+            apklab/apksigner.jar
           if-no-files-found: error
