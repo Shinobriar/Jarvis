@@ -1,0 +1,29 @@
+name: APK Lab temporary build
+on:
+  push:
+    branches: [apklab-v1.1-build]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Install Android SDK
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Unpack source
+        run: mkdir apklab && unzip -q apklab-src.zip -d apklab
+      - name: Build unsigned release
+        working-directory: apklab
+        run: gradle :app:assembleRelease --stacktrace
+      - uses: actions/upload-artifact@v4
+        with:
+          name: APK-Lab-v1.1.0-unsigned
+          path: apklab/app/build/outputs/apk/release/app-release-unsigned.apk
+          if-no-files-found: error
