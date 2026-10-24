@@ -1,12 +1,8 @@
 name: Build FrameLab APK
 
 on:
-  push:
-    branches:
-      - framelab-apk-build-20261024
   pull_request:
-    branches:
-      - main
+    branches: [main]
 
 permissions:
   contents: write
@@ -45,10 +41,13 @@ jobs:
           name: FrameLab-Android-APK
           path: FrameLab/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-      - name: Publish APK to this build branch
+      - name: Publish APK to build-only branch
         run: |
+          cp FrameLab/app/build/outputs/apk/debug/app-debug.apk /tmp/FrameLab.apk
+          git fetch origin framelab-apk-build-20261024
+          git checkout -B framelab-apk-build-20261024 origin/framelab-apk-build-20261024
           mkdir -p built
-          cp FrameLab/app/build/outputs/apk/debug/app-debug.apk built/FrameLab.apk
+          cp /tmp/FrameLab.apk built/FrameLab.apk
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add built/FrameLab.apk
