@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - framelab-apk-build-20261024
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: write
